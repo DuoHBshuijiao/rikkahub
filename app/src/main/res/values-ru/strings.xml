@@ -252,7 +252,7 @@
   <string name="chat_page_compress_additional_prompt">Дополнительные инструкции (по желанию)</string>
   <string name="chat_page_compress_additional_prompt_hint">Укажите, что сохранить или на чём сосредоточиться</string>
   <string name="chat_page_compress_context">Сжать историю</string>
-  <string name="chat_page_compress_context_desc">Сжать переписку в краткое резюме, чтобы сэкономить токены</string>
+  <string name="chat_page_compress_context_desc">После успешного сжатия выбранная история будет заменена сводкой. Чтобы сохранить всю историю, сначала создайте ветку или включите опцию ниже.</string>
   <string name="chat_page_compress_context_title">Сжать историю чата</string>
   <string name="chat_page_compressing">Сжатие...</string>
   <string name="chat_page_conversation_system_prompt">Системный запрос для беседы</string>
@@ -1765,4 +1765,6 @@
   <string name="skill_detail_page_builtin_readonly">Встроенные навыки нельзя изменить</string>
   <string name="skill_detail_page_name_change_error">Название навыка нельзя изменить. Поле name должно быть %1$s</string>
   <string name="skill_detail_page_save_failed">Не удалось сохранить</string>
+  <string name="chat_page_compress_create_branch">Создать новую ветку и сжать</string>
+  <string name="chat_page_compress_branch_desc">Вся история останется в текущем чате. После успешного сжатия откроется новая ветка со сводкой и последними сообщениями, которые вы решили сохранить.</string>
 </resources>

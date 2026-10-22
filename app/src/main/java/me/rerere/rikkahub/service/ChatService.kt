@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.service
 
 import android.app.Application
+import android.net.Uri
 import android.util.Log
 import androidx.annotation.StringRes
 import androidx.core.net.toUri
@@ -12,6 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.completeWith
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,9 +66,9 @@ import me.rerere.rikkahub.data.model.fork
 import me.rerere.rikkahub.data.model.getAssistantOf
 import me.rerere.rikkahub.data.model.getChatModelOf
 import me.rerere.rikkahub.data.model.getStoredAssistantOf
-import me.rerere.rikkahub.data.model.insertContextCheckpoint
 import me.rerere.rikkahub.data.model.isAwaitingToolApproval
 import me.rerere.rikkahub.data.model.localFileUrls
+import me.rerere.rikkahub.data.model.replaceCompressedHistory
 import me.rerere.rikkahub.data.model.replaceUserRegexes
 import me.rerere.rikkahub.data.model.selectBranch
 import me.rerere.rikkahub.data.model.toMessageNode
@@ -789,7 +792,7 @@ class ChatService(
     // ---- 压缩对话历史 ----
 
     /**
-     * 把上一个检查点之后的消息压缩成摘要检查点。
+     * 用摘要替换已压缩的历史，可选择保留原会话并把结果保存为新分支。
      *
      * [keepRecentMessages] 为 0 时压缩全部消息，请求和上一轮对话前缀一致，缓存命中最好；
      * 大于 0 时最近的这些消息不参与压缩、留在检查点之后，对话已经超出模型上下文、整段发不出去时用来缩小压缩请求。
@@ -798,12 +801,14 @@ class ChatService(
         conversationId: Uuid,
         additionalPrompt: String,
         keepRecentMessages: Int = 0,
-    ): Result<Unit> = runCatching {
-        withLoadedSession<Unit>(conversationId) { session ->
+        createBranch: Boolean = false,
+    ): Result<Uuid> = runCatching {
+        withLoadedSession(conversationId) { session ->
             // 生成中的回复还没写完，压缩不到它，检查点也不能插到它前面
             check(!session.isGenerating) { context.getString(R.string.chat_page_compress_blocked_generating) }
 
             val conversation = session.state.value
+            val incarnation = session.incarnation
             val nodes = conversation.messageNodes
             val checkpointIndex = nodes.indexOfLast { it.currentMessage.isContextCheckpoint }
             // 压缩范围是 (checkpointIndex, endIndex)，之后的节点原样保留
@@ -837,18 +842,77 @@ class ChatService(
                 ),
             )
 
-            // 原消息原样保留，摘要插在压缩范围的最后一条消息之后。摘要生成期间对话可能已变化，
-            // 因此按节点定位插入到最新状态。
-            session.update { latest ->
+            val compressedNodes = nodes.take(endIndex)
+            fun compressedConversation(latest: Conversation): Conversation {
+                check(session.incarnation == incarnation) {
+                    context.getString(R.string.chat_page_compress_conversation_changed)
+                }
                 check(!session.isGenerating) { context.getString(R.string.chat_page_compress_blocked_generating) }
-                val updated = latest.insertContextCheckpoint(
-                    afterNodeId = nodes[endIndex - 1].id,
+                return latest.replaceCompressedHistory(
+                    expectedNodes = compressedNodes,
                     summary = summary,
                 ) ?: throw IllegalStateException(context.getString(R.string.chat_page_compress_conversation_changed))
-                updated.copy(chatSuggestions = emptyList())
             }
-            session.flush()
+
+            // 摘要失败或提交前取消都不改历史；一旦开始提交，必须完成保存。
+            currentCoroutineContext().ensureActive()
+            if (createBranch) {
+                val existingTitles = conversationRepo.getConversationsOfAssistant(conversation.assistantId)
+                    .first().mapTo(mutableSetOf()) { it.title }
+                val prepareWrite = conversationStore.prepareWrite()
+                currentCoroutineContext().ensureActive()
+                withContext(NonCancellable + Dispatchers.IO) {
+                    // 在会话锁内验证并取得最新保留区，不修改原会话。
+                    val source = session.update { latest ->
+                        compressedConversation(latest)
+                        latest
+                    }
+                    val compressed = compressedConversation(source)
+                    val copiedFiles = mutableListOf<Uri>()
+                    var fork: Conversation? = null
+                    try {
+                        val created = compressed.fork(
+                            messageId = compressed.currentMessages.last().id,
+                            existingTitles = existingTitles,
+                            copyFile = { url ->
+                                val copied = filesManager.createChatFilesByContents(listOf(url.toUri())).firstOrNull()
+                                    ?: error("Failed to copy attachment for compressed conversation")
+                                check(copied.toString() != url) {
+                                    "Failed to copy attachment for compressed conversation"
+                                }
+                                copiedFiles.add(copied)
+                                copied.toString()
+                            },
+                        ) ?: error("Failed to create compressed conversation")
+                        fork = created
+                        session.update { latest ->
+                            compressedConversation(latest)
+                            check(latest.messageNodes == source.messageNodes) {
+                                context.getString(R.string.chat_page_compress_conversation_changed)
+                            }
+                            latest
+                        }
+                        val saved = prepareWrite(created)
+                        conversationRepo.insertConversation(saved)
+                        memoryConsolidationScheduler.onConversationForked(saved)
+                        saved.id
+                    } catch (e: Exception) {
+                        // 索引写入失败时会话可能已落库，不能删掉它引用的附件。
+                        val persisted = fork?.let { conversationRepo.existsConversationById(it.id) } ?: false
+                        if (!persisted) filesManager.deleteChatFiles(copiedFiles)
+                        throw e
+                    }
+                }
+            } else {
+                withContext(NonCancellable) {
+                    session.update(::compressedConversation)
+                    session.flush()
+                    conversationId
+                }
+            }
         }
+    }.onFailure {
+        if (it is CancellationException) throw it
     }
 
     // ---- 聊天页配置 ----

@@ -287,7 +287,7 @@
   <string name="chat_page_compress_additional_prompt">تعليمات إضافية (اختياري)</string>
   <string name="chat_page_compress_additional_prompt_hint">حدد ما يجب الحفاظ عليه أو التركيز عليه</string>
   <string name="chat_page_compress_context">ضغط السجل</string>
-  <string name="chat_page_compress_context_desc">ضغط المحادثة إلى ملخص لتوفير Token</string>
+  <string name="chat_page_compress_context_desc">بعد نجاح الضغط، يُستبدل السجل المحدد بملخص. للاحتفاظ بالسجل الكامل، أنشئ فرعًا أولًا أو فعّل الخيار أدناه.</string>
   <string name="chat_page_compress_context_title">ضغط سجل المحادثة</string>
   <string name="chat_page_compressing">جارٍ الضغط...</string>
   <string name="chat_page_conversation_system_prompt">مطالبة نظام المحادثة</string>
@@ -1763,4 +1763,6 @@
   <string name="skill_detail_page_builtin_readonly">لا يمكن تعديل المهارات المدمجة</string>
   <string name="skill_detail_page_name_change_error">لا يمكن تغيير اسم المهارة. يجب أن يكون حقل name %1$s</string>
   <string name="skill_detail_page_save_failed">فشل الحفظ</string>
+  <string name="chat_page_compress_create_branch">إنشاء فرع جديد وضغط المحادثة</string>
+  <string name="chat_page_compress_branch_desc">يُحتفظ بالسجل الكامل في هذه المحادثة. بعد نجاح الضغط، يُفتح فرع جديد يبدأ بالملخص وتليه الرسائل الأخيرة التي اخترت الاحتفاظ بها.</string>
 </resources>

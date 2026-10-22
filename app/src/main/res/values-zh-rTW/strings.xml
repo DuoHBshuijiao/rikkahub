@@ -252,7 +252,7 @@
   <string name="chat_page_compress_additional_prompt">額外指示（選填）</string>
   <string name="chat_page_compress_additional_prompt_hint">指定要保留或聚焦的內容</string>
   <string name="chat_page_compress_context">壓縮歷史</string>
-  <string name="chat_page_compress_context_desc">將對話壓縮成摘要以節省 token</string>
+  <string name="chat_page_compress_context_desc">壓縮成功後，將刪除涉及的歷史並在開頭插入摘要。如需保留完整歷史，請先建立分支或開啟下方選項。</string>
   <string name="chat_page_compress_context_title">壓縮對話紀錄</string>
   <string name="chat_page_compressing">正在壓縮...</string>
   <string name="chat_page_conversation_system_prompt">對話系統提示</string>
@@ -1763,4 +1763,6 @@
   <string name="skill_detail_page_builtin_readonly">內建技能無法修改</string>
   <string name="skill_detail_page_name_change_error">技能名稱無法變更。name 欄位必須為 %1$s</string>
   <string name="skill_detail_page_save_failed">儲存失敗</string>
+  <string name="chat_page_compress_create_branch">建立新分支並壓縮</string>
+  <string name="chat_page_compress_branch_desc">保留目前對話的完整歷史。壓縮成功後建立並開啟新分支，以摘要開頭，後接保留的最近訊息。</string>
 </resources>

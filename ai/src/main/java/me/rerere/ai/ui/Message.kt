@@ -34,7 +34,7 @@ data class UIMessage(
     // 这条消息累计请求了多少次模型（多轮工具调用共用同一条消息）
     val stepCount: Int? = null,
     val translation: String? = null,
-    // 压缩检查点：此消息是它之前全部历史的摘要，组装请求时从最后一个检查点开始取
+    // 压缩摘要通常位于清理历史后的开头；兼容仍保留历史的旧检查点，请求从最后一个标记开始取
     val isContextCheckpoint: Boolean = false,
     // 请求期间生成的内部消息；该标记仅在内存中使用
     @Transient

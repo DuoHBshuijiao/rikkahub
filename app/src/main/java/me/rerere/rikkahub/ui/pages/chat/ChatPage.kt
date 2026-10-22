@@ -506,6 +506,7 @@ private fun ChatFilesPickerSheet(
     onStartVoiceMode: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val navController = LocalNavController.current
     val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -530,7 +531,14 @@ private fun ChatFilesPickerSheet(
             assistant = assistant,
             chatModel = chatModel,
             mcpManager = vm.mcpManager,
-            onCompressContext = vm::handleCompressContext,
+            onCompressContext = { additionalPrompt, keepRecentMessages, createBranch ->
+                vm.handleCompressContext(additionalPrompt, keepRecentMessages, createBranch) { targetId ->
+                    if (targetId != conversation.id) {
+                        dismissAll()
+                        navigateToChatPage(navController, chatId = targetId)
+                    }
+                }
+            },
             onUpdateAssistant = vm::updateAssistant,
             onUpdateWorkspaceCwd = vm::updateWorkspaceCwd,
             showCompressDialog = showCompressDialog,

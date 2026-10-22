@@ -164,14 +164,14 @@ fun Conversation.lastContextTokens(): Int? {
     return message.contextTokens()
 }
 
-/** 在 [afterNodeId] 节点之后插入压缩检查点；该节点已不存在时返回 null。 */
-internal fun Conversation.insertContextCheckpoint(afterNodeId: Uuid, summary: String): Conversation? {
-    val index = messageNodes.indexOfFirst { it.id == afterNodeId }
-    if (index == -1) return null
+/** 用摘要替换 [expectedNodes] 历史前缀；历史已改变时返回 null，后续节点从最新状态保留。 */
+internal fun Conversation.replaceCompressedHistory(expectedNodes: List<MessageNode>, summary: String): Conversation? {
+    if (expectedNodes.isEmpty() || messageNodes.take(expectedNodes.size) != expectedNodes) return null
     val checkpoint = UIMessage.user(summary).copy(isContextCheckpoint = true).toMessageNode()
     return copy(
-        messageNodes =
-        messageNodes.subList(0, index + 1) + checkpoint + messageNodes.subList(index + 1, messageNodes.size),
+        messageNodes = listOf(checkpoint) + messageNodes.drop(expectedNodes.size),
+        chatSuggestions = emptyList(),
+        updateAt = Instant.now(),
     )
 }
 

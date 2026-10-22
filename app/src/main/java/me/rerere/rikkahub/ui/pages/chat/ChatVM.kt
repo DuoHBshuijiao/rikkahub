@@ -243,9 +243,21 @@ class ChatVM(
         }
     }
 
-    fun handleCompressContext(additionalPrompt: String, keepRecentMessages: Int): Job {
+    fun handleCompressContext(
+        additionalPrompt: String,
+        keepRecentMessages: Int,
+        createBranch: Boolean,
+        onComplete: (Uuid) -> Unit,
+    ): Job {
         return viewModelScope.launch {
-            chatService.compressConversation(_conversationId, additionalPrompt, keepRecentMessages).onFailure {
+            chatService.compressConversation(
+                conversationId = _conversationId,
+                additionalPrompt = additionalPrompt,
+                keepRecentMessages = keepRecentMessages,
+                createBranch = createBranch,
+            ).onSuccess {
+                onComplete(it)
+            }.onFailure {
                 chatService.addError(it, title = context.getString(R.string.error_title_compress_conversation))
             }
         }

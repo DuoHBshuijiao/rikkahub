@@ -252,7 +252,7 @@
   <string name="chat_page_compress_additional_prompt">追加指示（オプション）</string>
   <string name="chat_page_compress_additional_prompt_hint">保持または重点的に扱う内容を指定</string>
   <string name="chat_page_compress_context">履歴を圧縮</string>
-  <string name="chat_page_compress_context_desc">会話を要約して圧縮し、トークンを節約します</string>
+  <string name="chat_page_compress_context_desc">圧縮に成功すると、対象の履歴が要約に置き換わります。履歴をすべて残すには、先に分岐を作成するか、下のオプションを有効にしてください。</string>
   <string name="chat_page_compress_context_title">会話履歴を圧縮</string>
   <string name="chat_page_compressing">圧縮中…</string>
   <string name="chat_page_conversation_system_prompt">会話システムプロンプト</string>
@@ -1765,4 +1765,6 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="skill_detail_page_builtin_readonly">組み込みスキルは変更できません</string>
   <string name="skill_detail_page_name_change_error">スキル名は変更できません。name フィールドは%1$sである必要があります。</string>
   <string name="skill_detail_page_save_failed">保存に失敗しました</string>
+  <string name="chat_page_compress_create_branch">新しい分岐を作成して圧縮</string>
+  <string name="chat_page_compress_branch_desc">この会話の履歴をすべて残します。圧縮に成功すると、要約と保持する最近のメッセージを含む新しい分岐が開きます。</string>
 </resources>

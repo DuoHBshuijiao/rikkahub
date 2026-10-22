@@ -111,6 +111,7 @@ fun ChatMessage(
     model: Model? = null,
     assistant: Assistant? = null,
     lastMessage: Boolean = false,
+    firstMessage: Boolean = false,
     onFork: () -> Unit,
     onRegenerate: () -> Unit,
     onEdit: () -> Unit,
@@ -125,7 +126,7 @@ fun ChatMessage(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
 ) {
     val message = node.messages[node.selectIndex]
-    if (message.isContextCheckpoint) {
+    if (message.isContextCheckpoint && !firstMessage) {
         ChatMessageContextCheckpoint(
             message = message,
             onEdit = onEdit,

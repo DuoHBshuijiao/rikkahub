@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.FilledTonalIconButton
@@ -33,15 +35,18 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.Remove01
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.components.ui.switchItem
 
 @Composable
 fun CompressContextDialog(
     onDismiss: () -> Unit,
-    onConfirm: (additionalPrompt: String, keepRecentMessages: Int) -> Job
+    onConfirm: (additionalPrompt: String, keepRecentMessages: Int, createBranch: Boolean) -> Job
 ) {
     var additionalPrompt by remember { mutableStateOf("") }
     // 默认全部压缩，请求前缀与对话一致，缓存命中最好
     var keepRecentMessages by remember { mutableIntStateOf(0) }
+    var createBranch by remember { mutableStateOf(false) }
     var currentJob by remember { mutableStateOf<Job?>(null) }
     val isLoading = currentJob?.isActive == true
 
@@ -65,6 +70,7 @@ fun CompressContextDialog(
         },
         text = {
             Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 if (isLoading) {
@@ -81,7 +87,23 @@ fun CompressContextDialog(
                         Text(stringResource(R.string.chat_page_compressing))
                     }
                 } else {
-                    Text(stringResource(R.string.chat_page_compress_context_desc))
+                    Text(
+                        stringResource(
+                            if (createBranch) {
+                                R.string.chat_page_compress_branch_desc
+                            } else {
+                                R.string.chat_page_compress_context_desc
+                            }
+                        )
+                    )
+
+                    CardGroup {
+                        switchItem(
+                            checked = createBranch,
+                            onCheckedChange = { createBranch = it },
+                            headlineContent = { Text(stringResource(R.string.chat_page_compress_create_branch)) },
+                        )
+                    }
 
                     // Additional context input
                     OutlinedTextField(
@@ -142,7 +164,7 @@ fun CompressContextDialog(
                 }
             } else {
                 TextButton(onClick = {
-                    currentJob = onConfirm(additionalPrompt, keepRecentMessages)
+                    currentJob = onConfirm(additionalPrompt, keepRecentMessages, createBranch)
                 }) {
                     Text(stringResource(R.string.confirm))
                 }

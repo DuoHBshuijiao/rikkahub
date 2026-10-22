@@ -254,7 +254,7 @@
   <string name="chat_page_compress_additional_prompt">附加说明（可选）</string>
   <string name="chat_page_compress_additional_prompt_hint">指定要保留或关注的内容</string>
   <string name="chat_page_compress_context">压缩历史</string>
-  <string name="chat_page_compress_context_desc">将对话压缩为摘要以节省令牌</string>
+  <string name="chat_page_compress_context_desc">压缩成功后，将删除涉及的历史并在开头插入总结。如需保留完整历史，请先创建分支或开启下方选项。</string>
   <string name="chat_page_compress_context_title">压缩对话历史</string>
   <string name="chat_page_compressing">正在压缩...</string>
   <string name="chat_page_conversation_system_prompt">对话系统提示</string>
@@ -1768,4 +1768,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="skill_detail_page_builtin_readonly">内置技能不可修改</string>
   <string name="skill_detail_page_name_change_error">技能名称无法更改。name 字段必须为 %1$s</string>
   <string name="skill_detail_page_save_failed">保存失败</string>
+  <string name="chat_page_compress_create_branch">创建新分支并压缩</string>
+  <string name="chat_page_compress_branch_desc">保留当前会话的完整历史。压缩成功后创建并打开新分支，以总结开头，后接保留的最近消息。</string>
 </resources>

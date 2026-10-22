@@ -334,7 +334,7 @@
   <string name="chat_page_compress_additional_prompt">Zusätzliche Anweisungen (optional)</string>
   <string name="chat_page_compress_additional_prompt_hint">Gib an, was erhalten bleiben oder im Fokus stehen soll</string>
   <string name="chat_page_compress_context">Verlauf komprimieren</string>
-  <string name="chat_page_compress_context_desc">Komprimiere die Unterhaltung zu einer Zusammenfassung, um Tokens zu sparen</string>
+  <string name="chat_page_compress_context_desc">Nach erfolgreicher Komprimierung wird der betroffene Verlauf durch eine Zusammenfassung ersetzt. Erstelle zuerst einen Zweig oder aktiviere die Option unten, um den gesamten Verlauf zu behalten.</string>
   <string name="chat_page_compress_context_title">Unterhaltungsverlauf komprimieren</string>
   <string name="chat_page_compressing">Wird komprimiert...</string>
   <string name="chat_page_conversation_system_prompt">Systemprompt der Unterhaltung</string>
@@ -1766,4 +1766,6 @@
   <string name="setting_page_web_server_jwt_enable_desc">Passwortprüfung beim Zugriff auf die Weboberfläche erforderlich</string>
   <string name="setting_page_web_server_lan_address">LAN-Adresse</string>
   <string name="setting_page_web_server_local_address">Lokale Adresse</string>
+  <string name="chat_page_compress_create_branch">Neuen Zweig erstellen und komprimieren</string>
+  <string name="chat_page_compress_branch_desc">Der gesamte Verlauf bleibt in diesem Chat erhalten. Nach erfolgreicher Komprimierung öffnet sich ein neuer Zweig mit der Zusammenfassung und den neuesten Nachrichten, die du behalten möchtest.</string>
 </resources>

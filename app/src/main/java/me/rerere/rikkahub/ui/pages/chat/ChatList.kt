@@ -393,6 +393,7 @@ private fun ChatListNormal(
                             onToolApproval = onToolApproval,
                             onToolAnswer = onToolAnswer,
                             lastMessage = index == lastMessageIndex,
+                            firstMessage = index == 0,
                         )
                     }
                 }

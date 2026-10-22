@@ -254,7 +254,7 @@
   <string name="chat_page_compress_additional_prompt">Additional Instructions (Optional)</string>
   <string name="chat_page_compress_additional_prompt_hint">Specify what to preserve or focus on</string>
   <string name="chat_page_compress_context">Compress History</string>
-  <string name="chat_page_compress_context_desc">Compress the conversation into a summary to save tokens</string>
+  <string name="chat_page_compress_context_desc">After compression succeeds, replace the compressed history with a summary. To keep the full history, create a branch first or enable the option below.</string>
   <string name="chat_page_compress_context_title">Compress Conversation History</string>
   <string name="chat_page_compressing">Compressing...</string>
   <string name="chat_page_conversation_system_prompt">Conversation System Prompt</string>
@@ -1766,4 +1766,6 @@
   <string name="skill_detail_page_builtin_readonly">Built-in skills cannot be modified</string>
   <string name="skill_detail_page_name_change_error">The skill name cannot be changed. The name field must be %1$s</string>
   <string name="skill_detail_page_save_failed">Save failed</string>
+  <string name="chat_page_compress_create_branch">Create new branch and compress</string>
+  <string name="chat_page_compress_branch_desc">Keep the full history in this conversation. After compression succeeds, open a new branch with the summary followed by any recent messages you keep.</string>
 </resources>
