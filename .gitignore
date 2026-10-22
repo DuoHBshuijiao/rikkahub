@@ -11,3 +11,16 @@ local.properties
 .cursor
 .history
 .kotlin
+
+# Local signing keys and credentials
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+signing.properties
+ruyu-release.properties
+
+# Generated Android packages
+*.apk
+*.aab

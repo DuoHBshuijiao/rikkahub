@@ -23,7 +23,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "me.rerere.rikkahub"
+        applicationId = "ruyu.rikkahub"
         minSdk = 26
         targetSdk = 37
         versionCode = 193
@@ -65,6 +65,7 @@ android {
                     keyAliasValue != null && keyPasswordValue != null
                 ) {
                     storeFile = file(storeFilePath)
+                    storeType = localProperties.getProperty("storeType") ?: "jks"
                     storePassword = storePasswordValue
                     keyAlias = keyAliasValue
                     keyPassword = keyPasswordValue
@@ -89,7 +90,8 @@ android {
         }
     }
     // 按分发渠道区分：github 是 GitHub Release / 每日构建的 APK，play 是上架 Google Play 的 AAB
-    // 两个渠道共用同一个 applicationId，Play 版不能自更新，相关入口通过 BuildConfig.IS_PLAY_STORE 关闭
+    // 两个渠道共用个人分支的 applicationId，避免签名冲突并支持与官方版并装。
+    // Play 版不能自更新，相关入口通过 BuildConfig.IS_PLAY_STORE 关闭。
     flavorDimensions += "distribution"
     productFlavors {
         create("github") {

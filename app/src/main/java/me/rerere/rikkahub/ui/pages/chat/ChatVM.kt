@@ -40,6 +40,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.ConversationCleanupOptions
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.NodeFavoriteTarget
 import me.rerere.rikkahub.data.model.SearchJumpTarget
@@ -278,6 +279,9 @@ class ChatVM(
             }
         }
     }
+
+    internal suspend fun cleanupConversationContent(options: ConversationCleanupOptions): Boolean =
+        chatService.cleanupConversationContent(_conversationId, options)
 
     suspend fun forkMessage(message: UIMessage): Conversation {
         return chatService.forkConversationAtMessage(_conversationId, message.id)

@@ -74,11 +74,14 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.ConversationCleanupOptions
+import me.rerere.rikkahub.data.model.isAwaitingToolApproval
 import me.rerere.rikkahub.data.model.lastContextTokens
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.components.ui.ExtensionSelector
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.workspace.WorkspaceShellStatus
@@ -99,6 +102,8 @@ internal fun FilesPicker(
     state: ChatInputState,
     mcpManager: McpManager,
     onCompressContext: (additionalPrompt: String, keepRecentMessages: Int, createBranch: Boolean) -> Job,
+    onCleanupContent: suspend (ConversationCleanupOptions) -> Boolean,
+    isGenerating: Boolean,
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateWorkspaceCwd: (String?) -> Unit,
     showCompressDialog: Boolean,
@@ -113,6 +118,8 @@ internal fun FilesPicker(
     onStartVoiceMode: (() -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
+    val toaster = LocalToaster.current
+    var showCleanupDialog by remember(conversation.id) { mutableStateOf(false) }
     val provider = chatModel?.findProvider(providers = settings.providers)
     val navController = LocalNavController.current
     val workspaceRepository: WorkspaceRepository = koinInject()
@@ -187,7 +194,7 @@ internal fun FilesPicker(
                 val showMcp = settings.mcpServers.isNotEmpty()
                 // 限制了上下文消息数就是滚动上下文，旧消息会自动移出，不需要压缩
                 val showCompress = assistant.contextMessageLimit <= 0
-                val itemCount = 1 + listOf(showWorkspace, showWorkspace && showCwd, showMcp, showCompress).count { it }
+                val itemCount = 2 + listOf(showWorkspace, showWorkspace && showCwd, showMcp, showCompress).count { it }
                 var itemIndex = 0
                 Column(
                     verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
@@ -316,6 +323,15 @@ internal fun FilesPicker(
                             Text(stringResource(R.string.chat_page_compress_context))
                         }
                     }
+                    SegmentedListItem(
+                        onClick = { showCleanupDialog = true },
+                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
+                        leadingContent = {
+                            Icon(imageVector = HugeIcons.Files02, contentDescription = null)
+                        },
+                    ) {
+                        Text("清理会话内容")
+                    }
                 }
             }
         }
@@ -330,6 +346,23 @@ internal fun FilesPicker(
                 onUpdateWorkspaceCwd(newCwd)
             },
             onDismiss = { showCwdSheet = false },
+        )
+    }
+
+    if (showCleanupDialog) {
+        CleanupConversationDialog(
+            blockedReason = when {
+                isGenerating -> "请先停止生成再清理会话内容"
+                conversation.isAwaitingToolApproval -> "请先处理工具审批再清理会话内容"
+                else -> null
+            },
+            onConfirm = onCleanupContent,
+            onComplete = { changed ->
+                showCleanupDialog = false
+                toaster.show(if (changed) "会话内容已清理" else "没有可清理的内容")
+                onDismiss()
+            },
+            onDismiss = { showCleanupDialog = false },
         )
     }
 

@@ -57,6 +57,7 @@ import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.ConversationCleanupOptions
 import me.rerere.rikkahub.data.model.bindConfig
 import me.rerere.rikkahub.data.model.cancelInterruptedTools
 import me.rerere.rikkahub.data.model.deleteMessage
@@ -1214,6 +1215,16 @@ class ChatService(
     }
 
     // ---- 消息操作 ----
+
+    internal suspend fun cleanupConversationContent(
+        conversationId: Uuid,
+        options: ConversationCleanupOptions,
+    ): Boolean = withLoadedSession(conversationId) { session ->
+        val changed = session.cleanupContent(options)
+        // 无变化也重试 flush，确保先前失败的写入能在重试时完成。
+        session.flush()
+        changed
+    }
 
     suspend fun editMessage(
         conversationId: Uuid,

@@ -563,6 +563,7 @@ private fun ChatFilesPickerSheet(
 ) {
     val navController = LocalNavController.current
     val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
+    val conversationJob by vm.conversationJob.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     var showCompressDialog by remember { mutableStateOf(false) }
@@ -586,6 +587,8 @@ private fun ChatFilesPickerSheet(
             assistant = assistant,
             chatModel = chatModel,
             mcpManager = vm.mcpManager,
+            onCleanupContent = vm::cleanupConversationContent,
+            isGenerating = conversationJob != null,
             onCompressContext = { additionalPrompt, keepRecentMessages, createBranch ->
                 vm.handleCompressContext(additionalPrompt, keepRecentMessages, createBranch) { targetId ->
                     if (targetId != conversation.id) {

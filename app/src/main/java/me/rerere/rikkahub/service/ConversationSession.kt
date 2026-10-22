@@ -15,6 +15,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.finishReasoning
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.ConversationCleanupOptions
+import me.rerere.rikkahub.data.model.cleanupContent
+import me.rerere.rikkahub.data.model.isAwaitingToolApproval
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.uuid.Uuid
@@ -51,12 +54,14 @@ class ConversationSession(
     val state: StateFlow<Conversation> = _state.asStateFlow()
     private val initializationMutex = Mutex()
     private val writeMutex = Mutex()
+
     @Volatile
     var isInitialized = false
         private set
 
     // 上次落库、加载或新建时的状态，内存还是这个实例就说明没有要落库的修改；只在 writeMutex 内修改
     private var lastWritten: Conversation = initial
+
     @Volatile
     var existsInDatabase = false
         private set
@@ -94,6 +99,19 @@ class ConversationSession(
 
     /** 在最新状态上修改会话，只改内存；需要落库时之后调用 [flush] */
     fun update(transform: (Conversation) -> Conversation): Conversation = checkNotNull(tryUpdate(transform))
+
+    /** 与 setJob 使用同一把锁，在最新状态上检查并清理，避免覆盖生成中的内容。 */
+    @Synchronized
+    internal fun cleanupContent(options: ConversationCleanupOptions): Boolean {
+        require(!options.isEmpty) { "请选择要删除的内容" }
+        var changed = false
+        update { latest ->
+            check(getJob() == null) { "请先停止生成再清理会话内容" }
+            check(!latest.isAwaitingToolApproval) { "请先处理工具审批再清理会话内容" }
+            latest.cleanupContent(options).also { changed = it !== latest }
+        }
+        return changed
+    }
 
     /** 同 [update]，[transform] 返回 null 表示没什么可改的，这时不修改并返回 null */
     @Synchronized
@@ -224,7 +242,7 @@ class ConversationSession(
     val isGenerating: Boolean get() = _generationJob.value?.isActive == true
     val isInUse: Boolean
         get() = refCount.get() > 0 || _generationJob.value != null ||
-                messageQueue.state.value.messages.isNotEmpty()
+            messageQueue.state.value.messages.isNotEmpty()
 
     // 空闲检查任务
     private var idleCheckJob: Job? = null
