@@ -40,6 +40,7 @@ import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV3Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV4Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV5Migration
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.files.LocalFileReferences
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
@@ -180,6 +181,23 @@ class SettingsStore internal constructor(
 
         // 赞助提醒
         val SPONSOR_ALERT_DISMISSED_AT = intPreferencesKey("sponsor_alert_dismissed_at")
+
+        private val LOCAL_FILE_REFERENCE_ROOT = stringPreferencesKey("local_file_reference_root_v1")
+
+        internal suspend fun rebuildFileReferencesBeforeInitialization(context: Context) {
+            val root = context.filesDir.canonicalPath
+            context.settingsStore.edit { preferences ->
+                if (preferences[LOCAL_FILE_REFERENCE_ROOT] == root) return@edit
+                val references = LocalFileReferences(context.filesDir)
+                listOf(DISPLAY_SETTING, ASSISTANTS).forEach { key ->
+                    preferences[key]?.let { original ->
+                        val updated = references.rebuildJson(original)
+                        if (updated != original) preferences[key] = updated
+                    }
+                }
+                preferences[LOCAL_FILE_REFERENCE_ROOT] = root
+            }
+        }
 
         // Uses the same DataStore singleton without starting settings flows or requiring Koin.
         internal suspend fun restoreBeforeInitialization(context: Context, settings: Settings, launchCount: Int) {

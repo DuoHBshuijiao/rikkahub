@@ -225,7 +225,10 @@ private fun buildWorkspacePrompt(
         "- Built-in skills shipped with the app are mounted at `/builtin_skills/<skill-name>/` with the same layout. Treat `/builtin_skills` as READ-ONLY: you may read files and run scripts there, but never modify, overwrite, or delete anything. A skill in `/skills` with the same name overrides the built-in one."
     )
     appendLine(
-        "- Files the user uploaded are mounted at `/upload`. Treat `/upload` as READ-ONLY: read uploaded files from `/upload/<file-name>`, but never modify, overwrite, or delete anything there. If you need to change an uploaded file, copy it into `/workspace` first and edit the copy."
+        "- Start file operations in the current working directory. Explore other directories only when needed for the user's task."
+    )
+    appendLine(
+        "- Treat message attachments as read-only. To edit one, first copy the specific attached file into the workspace."
     )
     if (!cwd.isNullOrBlank()) {
         appendLine(

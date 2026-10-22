@@ -226,6 +226,8 @@ private fun createShellTool(
         append("Use cwd for a path relative to the workspace files root. ")
         if (!defaultCwd.isNullOrBlank()) {
             append("Defaults to '$defaultCwd'. ")
+        } else {
+            append("Defaults to ${layout.workspaceDir}; a plain ls lists only this workspace's files. ")
         }
         append("Requires Rootfs to be installed and ready.")
     },
@@ -243,7 +245,7 @@ private fun createShellTool(
                         if (!defaultCwd.isNullOrBlank()) {
                             "Working directory relative to the workspace files root. Defaults to '$defaultCwd'."
                         } else {
-                            "Working directory relative to the workspace files root. Defaults to root."
+                            "Working directory relative to the workspace files root. Defaults to ${layout.workspaceDir}, the workspace files directory."
                         }
                     )
                 })

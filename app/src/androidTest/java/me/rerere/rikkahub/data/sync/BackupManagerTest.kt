@@ -9,9 +9,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.rikkahub.data.datastore.DisplaySetting
+import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.AppDatabaseFactory
+import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -42,8 +46,11 @@ class BackupManagerTest {
             override fun getFilesDir() = File(directory, "files").apply { mkdirs() }
             override fun getCacheDir() = File(directory, "cache").apply { mkdirs() }
             override fun getNoBackupFilesDir() = File(directory, "no-backup").apply { mkdirs() }
-            override fun getDatabasePath(name: String): File = if (File(name).isAbsolute) File(name)
-                else File(directory, "databases/$name").also { it.parentFile!!.mkdirs() }
+            override fun getDatabasePath(name: String): File = if (File(name).isAbsolute) {
+                File(name)
+            } else {
+                File(directory, "databases/$name").also { it.parentFile!!.mkdirs() }
+            }
         }
         liveDatabase = AppDatabaseFactory.create(context)
         liveDatabase.openHelper.writableDatabase.execSQL("CREATE TABLE backup_probe (text TEXT)")
@@ -117,7 +124,11 @@ class BackupManagerTest {
         val archive = File(directory, "no-launch-count.zip")
         ZipOutputStream(archive.outputStream()).use { zip ->
             zip.putNextEntry(ZipEntry("settings.json"))
-            zip.write(JsonObject(JsonInstant.parseToJsonElement(settingsJson).jsonObject - "launchCount").toString().toByteArray())
+            zip.write(
+                JsonObject(
+                    JsonInstant.parseToJsonElement(settingsJson).jsonObject - "launchCount"
+                ).toString().toByteArray()
+            )
             zip.closeEntry()
         }
         manager.stageRestore(archive, includeDatabase = false, includeFiles = false)
@@ -170,8 +181,56 @@ class BackupManagerTest {
         assertEquals("live", probe(liveDatabase))
     }
 
+    @Test fun crossPackageRestoreRebuildsReferencesBeforeInstallingFiles() = runBlocking {
+        val oldUri = "file:///data/user/10/com.example.official/files/upload/photo.png"
+        val settings = Settings(
+            displaySetting = DisplaySetting(userAvatar = Avatar.Image(oldUri)),
+            assistants = listOf(Assistant(avatar = Avatar.Image(oldUri), background = oldUri)),
+        )
+        val source = File(directory, "cross-package-source")
+        withRoom(source) { room ->
+            val db = room.openHelper.writableDatabase
+            db.execSQL("DELETE FROM local_file_reference_state")
+            db.execSQL(
+                "INSERT INTO GenMediaEntity (path, model_id, prompt, create_at, source_paths) VALUES (?, 'model', 'prompt', 0, ?)",
+                arrayOf(oldUri, oldUri),
+            )
+        }
+        val archive = File(directory, "cross-package.zip")
+        ZipOutputStream(archive.outputStream()).use { zip ->
+            addFile(zip, DatabaseBackup.ARCHIVE_DATABASE, source)
+            zip.putNextEntry(ZipEntry("settings.json"))
+            zip.write(JsonInstant.encodeToString(settings).toByteArray())
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("upload/photo.png"))
+            zip.write("image contents".toByteArray())
+            zip.closeEntry()
+        }
+
+        manager.stageRestore(archive, includeDatabase = true, includeFiles = true)
+        val pending = File(context.noBackupFilesDir, "backup-restore/pending")
+        val restored = JsonInstant.decodeFromString<Settings>(File(pending, "settings.json").readText())
+        val expected = "file://${File(context.filesDir, "upload/photo.png").canonicalFile.toURI().rawPath}"
+        assertEquals(Avatar.Image(expected), restored.displaySetting.userAvatar)
+        assertEquals(Avatar.Image(expected), restored.assistants.single().avatar)
+        assertEquals(expected, restored.assistants.single().background)
+        withRoom(File(pending, "payload/database/rikka_hub")) { room ->
+            room.openHelper.readableDatabase.query("SELECT path, source_paths FROM GenMediaEntity").use {
+                assertTrue(it.moveToFirst())
+                assertEquals(expected, it.getString(0))
+                assertEquals(expected, it.getString(1))
+            }
+        }
+        assertEquals("image contents", File(pending, "payload/files/upload/photo.png").readText())
+        assertFalse(File(context.filesDir, "upload/photo.png").exists())
+        assertEquals("live", probe(liveDatabase))
+    }
+
     private fun probe(database: AppDatabase): String = database.openHelper.readableDatabase
-        .query("SELECT text FROM backup_probe").use { check(it.moveToFirst()); it.getString(0) }
+        .query("SELECT text FROM backup_probe").use {
+            check(it.moveToFirst())
+            it.getString(0)
+        }
 
     private fun addFile(zip: ZipOutputStream, name: String, file: File) {
         zip.putNextEntry(ZipEntry(name))

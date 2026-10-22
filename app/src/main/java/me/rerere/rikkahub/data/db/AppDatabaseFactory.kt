@@ -11,6 +11,7 @@ import me.rerere.rikkahub.data.db.migrations.Migration_15_16
 import me.rerere.rikkahub.data.db.migrations.Migration_27_28
 import me.rerere.rikkahub.data.db.migrations.Migration_30_31
 import me.rerere.rikkahub.data.db.migrations.Migration_6_7
+import me.rerere.rikkahub.data.files.LocalFileReferenceMigration
 import java.io.File
 
 /** Shared schema, migrations and extensions for the app and staged backup validation. */
@@ -29,6 +30,7 @@ internal object AppDatabaseFactory {
             )
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onOpen(db: SupportSQLiteDatabase) {
+                    LocalFileReferenceMigration.rebuildDatabase(db, context.filesDir)
                     // 旧版本搜索用 jieba 分词，会把词典解压到这里（约 14MB），现在不再需要
                     File(context.filesDir, "simple_dict").takeIf { it.exists() }?.deleteRecursively()
                     db.execSQL(

@@ -108,4 +108,27 @@ class LocalWorkspaceBackendTest {
         val (manager, _) = createManager()
         assertEquals(null, manager.terminalLaunch(root, shellCompatibilityMode = false))
     }
+
+    @Test
+    fun commandsDefaultToThisWorkspacesFilesRatherThanGlobalMounts() {
+        var executed: WorkspaceShellContext? = null
+        val runner = object : WorkspaceShellRunner {
+            override fun execute(context: WorkspaceShellContext): WorkspaceCommandResult {
+                executed = context
+                return WorkspaceCommandResult(0, "", "")
+            }
+        }
+        val (manager, _) = createManager(runner)
+        val backend = manager.backend(root)
+        backend.executeCommand("ls", cwd = "", timeoutMillis = 1_000, stdin = null)
+
+        val initial = requireNotNull(executed)
+        assertEquals("", initial.cwd)
+        assertEquals(manager.filesDir(root).canonicalFile, initial.workingDir)
+        assertEquals(manager.filesDir(root), initial.filesDir)
+
+        File(manager.filesDir(root), "project").mkdirs()
+        backend.executeCommand("ls", cwd = "project", timeoutMillis = 1_000, stdin = null)
+        assertEquals(File(manager.filesDir(root), "project").canonicalFile, requireNotNull(executed).workingDir)
+    }
 }
