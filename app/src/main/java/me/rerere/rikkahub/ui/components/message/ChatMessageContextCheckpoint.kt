@@ -46,6 +46,7 @@ fun ChatMessageContextCheckpoint(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
+    searchContent: (@Composable () -> Unit)? = null,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
 
@@ -84,7 +85,7 @@ fun ChatMessageContextCheckpoint(
         }
 
         AnimatedVisibility(
-            visible = expanded,
+            visible = expanded || searchContent != null,
             enter = expandVertically() + fadeIn(),
             exit = shrinkVertically() + fadeOut(),
         ) {
@@ -102,7 +103,7 @@ fun ChatMessageContextCheckpoint(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    MarkdownBlock(content = message.toText())
+                    if (searchContent == null) MarkdownBlock(content = message.toText()) else searchContent()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End,

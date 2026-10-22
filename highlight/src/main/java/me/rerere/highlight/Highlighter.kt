@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -55,6 +56,7 @@ fun CodeHighlightText(
     softWrap: Boolean = true,
     maxLines: Int = Int.MAX_VALUE,
     minLines: Int = 1,
+    onTextLayout: (TextLayoutResult) -> Unit = {},
 ) {
     val highlighter = LocalCodeHighlighter.current
     val annotatedString = remember(code, language, colors, highlighter) {
@@ -82,5 +84,6 @@ fun CodeHighlightText(
         softWrap = softWrap,
         maxLines = maxLines,
         minLines = minLines,
+        onTextLayout = onTextLayout,
     )
 }

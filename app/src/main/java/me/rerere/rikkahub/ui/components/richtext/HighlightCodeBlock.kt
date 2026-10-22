@@ -55,10 +55,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import me.rerere.highlight.HighlightTextColorPalette
-import me.rerere.highlight.buildHighlightText
 import me.rerere.highlight.CodeHighlightText
 import me.rerere.highlight.CodeHighlighter
+import me.rerere.highlight.HighlightTextColorPalette
+import me.rerere.highlight.buildHighlightText
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
@@ -78,6 +78,8 @@ import me.rerere.rikkahub.ui.theme.AtomOneLightPalette
 import me.rerere.rikkahub.ui.theme.JetbrainsMono
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toDp
+import me.rerere.ui.markdown.MarkdownSearchText
+import me.rerere.ui.markdown.currentMarkdownCodeSearchTarget
 import me.rerere.ui.webview.WebView
 import me.rerere.ui.webview.WebViewContentCache
 import me.rerere.ui.webview.rememberWebViewState
@@ -106,6 +108,7 @@ fun HighlightCodeBlock(
     val context = LocalContext.current
     val settings = LocalSettings.current
     val normalizedLanguage = remember(language) { language.lowercase() }
+    val searchTarget = currentMarkdownCodeSearchTarget()
     val canInlinePreview = completeCodeBlock && normalizedLanguage in PREVIEWABLE_LANGUAGES
     var previewMode by remember(canInlinePreview, code, normalizedLanguage) {
         mutableStateOf(false)
@@ -164,7 +167,7 @@ fun HighlightCodeBlock(
             modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
         ) {
             when {
-                canInlinePreview && previewMode -> {
+                canInlinePreview && previewMode && searchTarget == null -> {
                     CodeBlockPreview(
                         code = code,
                         language = normalizedLanguage,
@@ -173,7 +176,7 @@ fun HighlightCodeBlock(
                             .height(200.dp),
                     )
                 }
-                completeCodeBlock && normalizedLanguage == "mermaid" -> {
+                completeCodeBlock && normalizedLanguage == "mermaid" && searchTarget == null -> {
                     Mermaid(
                         code = code,
                         modifier = Modifier.fillMaxWidth(),
@@ -183,7 +186,7 @@ fun HighlightCodeBlock(
                     val textStyle = LocalTextStyle.current.merge(style)
                     val codeLines = remember(code) { code.lines() }
                     val collapsedCode = remember(codeLines) { codeLines.take(COLLAPSE_LINES).joinToString("\n") }
-                    val displayCode = if (isExpanded) code else collapsedCode
+                    val displayCode = if (isExpanded || searchTarget != null) code else collapsedCode
                     val displayLines = remember(displayCode) { displayCode.lines() }
 
                     // 如果显示行号且自动换行，需要逐行渲染以保持对齐
@@ -261,6 +264,10 @@ private fun CodeBlockWithLineNumbersWrapped(
     val lineNumberWidth = remember(displayLines.size) {
         displayLines.size.toString().length
     }
+    val lineOffsets = remember(displayLines) {
+        var offset = 0
+        displayLines.map { line -> offset.also { offset += line.length + 1 } }
+    }
     SelectionContainer {
         Column {
             displayLines.forEachIndexed { index, line ->
@@ -278,17 +285,20 @@ private fun CodeBlockWithLineNumbersWrapped(
                             modifier = Modifier.padding(end = 8.dp)
                         )
                     }
-                    CodeHighlightText(
-                        code = line,
-                        language = language,
-                        fontSize = textStyle.fontSize,
-                        lineHeight = textStyle.lineHeight,
-                        colors = colorPalette,
-                        overflow = TextOverflow.Visible,
-                        softWrap = true,
-                        fontFamily = JetbrainsMono,
-                        modifier = Modifier.weight(1f)
-                    )
+                    MarkdownSearchText(text = line, textOffset = lineOffsets[index]) { highlight, onTextLayout ->
+                        CodeHighlightText(
+                            code = line,
+                            language = language,
+                            fontSize = textStyle.fontSize,
+                            lineHeight = textStyle.lineHeight,
+                            colors = colorPalette,
+                            overflow = TextOverflow.Visible,
+                            softWrap = true,
+                            fontFamily = JetbrainsMono,
+                            modifier = Modifier.weight(1f).then(highlight),
+                            onTextLayout = onTextLayout,
+                        )
+                    }
                 }
             }
         }
@@ -338,17 +348,20 @@ private fun CodeBlockDefault(
 
         // 代码列
         SelectionContainer {
-            CodeHighlightText(
-                code = displayCode,
-                language = language,
-                modifier = Modifier.animateContentSize(),
-                fontSize = textStyle.fontSize,
-                lineHeight = textStyle.lineHeight,
-                colors = colorPalette,
-                overflow = TextOverflow.Visible,
-                softWrap = autoWrap,
-                fontFamily = JetbrainsMono
-            )
+            MarkdownSearchText(text = displayCode) { highlight, onTextLayout ->
+                CodeHighlightText(
+                    code = displayCode,
+                    language = language,
+                    modifier = Modifier.animateContentSize().then(highlight),
+                    fontSize = textStyle.fontSize,
+                    lineHeight = textStyle.lineHeight,
+                    colors = colorPalette,
+                    overflow = TextOverflow.Visible,
+                    softWrap = autoWrap,
+                    fontFamily = JetbrainsMono,
+                    onTextLayout = onTextLayout,
+                )
+            }
         }
     }
 }

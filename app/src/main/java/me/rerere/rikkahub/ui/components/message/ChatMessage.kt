@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
@@ -81,7 +82,9 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.model.SearchJumpTarget
 import me.rerere.rikkahub.data.model.replaceRegexes
+import me.rerere.rikkahub.data.model.searchContentFingerprint
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
@@ -89,9 +92,9 @@ import me.rerere.rikkahub.ui.components.ui.ChainOfThought
 import me.rerere.rikkahub.ui.components.ui.Favicon
 import me.rerere.rikkahub.ui.components.ui.FaviconRow
 import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalWorkspaceId
+import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.theme.LocalChatFontFamily
 import me.rerere.rikkahub.ui.theme.rememberChatFontFamily
 import me.rerere.rikkahub.utils.JsonInstant
@@ -107,6 +110,8 @@ import kotlin.time.Duration.Companion.milliseconds
 fun ChatMessage(
     node: MessageNode,
     modifier: Modifier = Modifier,
+    searchTarget: SearchJumpTarget? = null,
+    onSearchPosition: (Rect) -> Unit = {},
     loading: Boolean = false,
     model: Model? = null,
     assistant: Assistant? = null,
@@ -132,6 +137,22 @@ fun ChatMessage(
             onEdit = onEdit,
             onDelete = onDelete,
             modifier = modifier,
+            searchContent = if (searchTarget == null) {
+                null
+            } else {
+                {
+                    MessagePartsBlock(
+                        searchTarget = searchTarget,
+                        onSearchPosition = onSearchPosition,
+                        assistant = assistant,
+                        role = message.role,
+                        model = model,
+                        parts = message.parts,
+                        annotations = message.annotations,
+                        loading = loading,
+                    )
+                }
+            },
         )
         return
     }
@@ -179,6 +200,8 @@ fun ChatMessage(
             LocalWorkspaceId provides assistant?.workspaceId?.toString(),
         ) {
             MessagePartsBlock(
+                searchTarget = searchTarget?.takeIf { it.messageId == message.id.toString() },
+                onSearchPosition = onSearchPosition,
                 assistant = assistant,
                 role = message.role,
                 parts = message.parts,
@@ -237,7 +260,6 @@ fun ChatMessage(
         ProvideTextStyle(textStyle) {
             ChatMessageNerdLine(message = message)
         }
-
     }
     if (showActionsSheet) {
         ChatMessageActionsSheet(
@@ -286,6 +308,8 @@ fun ChatMessage(
 @OptIn(FlowPreview::class)
 @Composable
 private fun MessagePartsBlock(
+    searchTarget: SearchJumpTarget? = null,
+    onSearchPosition: (Rect) -> Unit = {},
     assistant: Assistant?,
     role: MessageRole,
     model: Model?,
@@ -308,7 +332,11 @@ private fun MessagePartsBlock(
                 if (part is UIMessagePart.Tool && part.toolName == "search_web" && part.isExecuted) {
                     val outputText = part.output.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
                     val items =
-                        runCatching { JsonInstant.parseToJsonElement(outputText).jsonObject["items"]?.jsonArray }.getOrNull()
+                        runCatching {
+                            JsonInstant.parseToJsonElement(
+                                outputText
+                            ).jsonObject["items"]?.jsonArray
+                        }.getOrNull()
                             ?: return@forEach
                     items.forEach { item ->
                         val id = item.jsonObject["id"]?.jsonPrimitive?.content ?: return@forEach
@@ -344,7 +372,9 @@ private fun MessagePartsBlock(
                         steps = block.steps,
                         collapsedAdaptiveWidth = isReasoningOnlyBlock,
                         cardColors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+                                alpha = settings.displaySetting.bubbleOpacity
+                            ),
                         ),
                     ) { step ->
                         when (step) {
@@ -389,11 +419,32 @@ private fun MessagePartsBlock(
             is MessagePartBlock.ContentBlock -> key(block.index) {
                 when (val part = block.part) {
                     is UIMessagePart.Text -> {
+                        val displayedText = remember(part.text, assistant?.regexes, role) {
+                            part.text.replaceRegexes(
+                                assistant = assistant,
+                                scope = if (role ==
+                                    MessageRole.USER) {
+                                    AssistantAffectScope.USER
+                                } else {
+                                    AssistantAffectScope.ASSISTANT
+                                },
+                                visual = true,
+                            )
+                        }
+                        val partTarget = remember(searchTarget, block.index, displayedText) {
+                            searchTarget?.takeIf {
+                                it.partIndex == block.index && displayedText.length >= it.contentLength &&
+                                    it.contentFingerprint ==
+                                    searchContentFingerprint(displayedText.take(it.contentLength))
+                            }?.markdownTarget()
+                        }
                         val textContent = @Composable {
                             if (role == MessageRole.USER) {
                                 ChatMessageBubble(
                                     role = role,
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = settings.displaySetting.bubbleOpacity),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(
+                                        alpha = settings.displaySetting.bubbleOpacity
+                                    ),
                                     onClick = { onUserMessageClick?.invoke() },
                                     // 用户气泡不占满整行，和助手的回复错开
                                     modifier = Modifier
@@ -401,38 +452,34 @@ private fun MessagePartsBlock(
                                         .animateContentSize(),
                                 ) {
                                     MarkdownBlock(
-                                        content = part.text.replaceRegexes(
-                                            assistant = assistant,
-                                            scope = AssistantAffectScope.USER,
-                                            visual = true,
-                                        ),
-                                        onClickCitation = handleClickCitation
+                                        content = displayedText,
+                                        onClickCitation = handleClickCitation,
+                                        searchTarget = partTarget,
+                                        onSearchPosition = onSearchPosition,
                                     )
                                 }
                             } else {
                                 if (settings.displaySetting.showAssistantBubble) {
                                     ChatMessageBubble(
                                         role = role,
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+                                            alpha = settings.displaySetting.bubbleOpacity
+                                        ),
                                         modifier = Modifier.animateContentSize(),
                                     ) {
                                         MarkdownBlock(
-                                            content = part.text.replaceRegexes(
-                                                assistant = assistant,
-                                                scope = AssistantAffectScope.ASSISTANT,
-                                                visual = true,
-                                            ),
+                                            content = displayedText,
                                             onClickCitation = handleClickCitation,
+                                            searchTarget = partTarget,
+                                            onSearchPosition = onSearchPosition,
                                         )
                                     }
                                 } else {
                                     MarkdownBlock(
-                                        content = part.text.replaceRegexes(
-                                            assistant = assistant,
-                                            scope = AssistantAffectScope.ASSISTANT,
-                                            visual = true,
-                                        ),
+                                        content = displayedText,
                                         onClickCitation = handleClickCitation,
+                                        searchTarget = partTarget,
+                                        onSearchPosition = onSearchPosition,
                                         modifier = Modifier
                                             .animateContentSize()
                                     )

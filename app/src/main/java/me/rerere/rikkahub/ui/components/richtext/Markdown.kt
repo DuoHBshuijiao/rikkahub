@@ -37,6 +37,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.toArgb
@@ -73,6 +74,7 @@ import me.rerere.ui.markdown.MarkdownDefaults
 import me.rerere.ui.markdown.MarkdownInline
 import me.rerere.ui.markdown.MarkdownInlineScope
 import me.rerere.ui.markdown.MarkdownInlineWidget
+import me.rerere.ui.markdown.MarkdownSearchTarget
 import me.rerere.ui.markdown.plainText
 import org.koin.compose.koinInject
 import kotlin.time.Clock
@@ -86,10 +88,12 @@ private fun MarkdownPreview() {
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 MarkdownBlock(
-                    content = "Hi there!", modifier = Modifier.background(Color.Red)
+                    content = "Hi there!",
+                    modifier = Modifier.background(Color.Red)
                 )
                 MarkdownBlock(
                     content = """
@@ -119,7 +123,7 @@ private fun MarkdownPreview() {
 
                     ## HTML Escaping
                     This is a &gt;  test
-                """.trimIndent()
+                    """.trimIndent()
                 )
             }
         }
@@ -135,7 +139,9 @@ fun MarkdownBlock(
     content: String,
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,
-    onClickCitation: (String) -> Unit = {}
+    onClickCitation: (String) -> Unit = {},
+    searchTarget: MarkdownSearchTarget? = null,
+    onSearchPosition: (Rect) -> Unit = {},
 ) {
     val enableLatexRendering = LocalSettings.current.displaySetting.enableLatexRendering
     val enableQuoteHighlight = LocalSettings.current.displaySetting.enableQuoteHighlight
@@ -200,6 +206,8 @@ fun MarkdownBlock(
         style = style,
         theme = theme,
         components = components,
+        searchTarget = searchTarget,
+        onSearchPosition = onSearchPosition,
     )
 }
 

@@ -1,13 +1,22 @@
 package me.rerere.rikkahub.data.db.fts
 
 import android.util.Log
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.SearchTextRange
+import me.rerere.rikkahub.data.model.decodeFtsMatchPositions
+import me.rerere.rikkahub.utils.JsonInstant
 import java.time.Instant
+import kotlin.uuid.Uuid
 
 data class MessageSearchResult(
     val nodeId: String,
@@ -24,45 +33,99 @@ enum class MessageSearchSort(val orderBy: String) {
     OLDEST_FIRST("update_at ASC, rank"),
 }
 
+data class MessageSearchCandidate(
+    val result: MessageSearchResult,
+    val assistantId: String,
+    val matchedTerms: List<String>,
+)
+
 private const val TAG = "MessageFtsManager"
 
 class MessageFtsManager(private val database: AppDatabase) {
 
     private val db get() = database.openHelper.writableDatabase
+    private val indexMutex = Mutex()
+    private var supportsPositions = true
 
     suspend fun indexConversation(conversation: Conversation) = withContext(Dispatchers.IO) {
-        val conversationId = conversation.id.toString()
+        indexMutex.withLock {
+            database.withTransaction { indexStoredConversation(conversation.id.toString()) }
+        }
+    }
+
+    // Always read the persisted version while holding the index lock. A queued update must not
+    // overwrite a rebuild with an older Conversation snapshot.
+    private suspend fun indexStoredConversation(conversationId: String) {
+        val conversation = database.conversationDao().getConversationById(conversationId)
         db.execSQL("DELETE FROM message_fts WHERE conversation_id = ?", arrayOf(conversationId))
-        conversation.messageNodes.forEach { node ->
-            node.messages.forEach { message ->
-                val text = message.extractFtsText()
-                if (text.isNotBlank()) {
-                    db.execSQL(
-                        "INSERT INTO message_fts(text, node_id, message_id, conversation_id, title, update_at) VALUES (?, ?, ?, ?, ?, ?)",
-                        arrayOf(
-                            text,
-                            node.id.toString(),
-                            message.id.toString(),
-                            conversationId,
-                            conversation.title,
-                            conversation.updateAt.toEpochMilli().toString(),
+        if (conversation == null) return
+        var offset = 0
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val nodes = database.messageNodeDao().getNodesOfConversationPaged(conversationId, 20, offset)
+            if (nodes.isEmpty()) break
+            nodes.forEach { node ->
+                JsonInstant.decodeFromString<List<UIMessage>>(node.messages).forEach { message ->
+                    val text = message.extractFtsText()
+                    if (text.isNotBlank()) {
+                        db.execSQL(
+                            "INSERT INTO message_fts(text, node_id, message_id, conversation_id, title, update_at) VALUES (?, ?, ?, ?, ?, ?)",
+                            arrayOf(
+                                text,
+                                node.id,
+                                message.id.toString(),
+                                conversationId,
+                                conversation.title,
+                                conversation.updateAt.toString(),
+                            )
                         )
-                    )
+                    }
                 }
             }
+            offset += nodes.size
         }
     }
 
     suspend fun updateTitle(conversationId: String, title: String) = withContext(Dispatchers.IO) {
-        db.execSQL("UPDATE message_fts SET title = ? WHERE conversation_id = ?", arrayOf(title, conversationId))
+        indexMutex.withLock {
+            db.execSQL("UPDATE message_fts SET title = ? WHERE conversation_id = ?", arrayOf(title, conversationId))
+        }
     }
 
     suspend fun deleteConversation(conversationId: String) = withContext(Dispatchers.IO) {
-        db.execSQL("DELETE FROM message_fts WHERE conversation_id = ?", arrayOf(conversationId))
+        indexMutex.withLock {
+            db.execSQL("DELETE FROM message_fts WHERE conversation_id = ?", arrayOf(conversationId))
+        }
     }
 
     suspend fun deleteAll() = withContext(Dispatchers.IO) {
-        db.execSQL("DELETE FROM message_fts")
+        indexMutex.withLock {
+            db.execSQL("DELETE FROM message_fts")
+            db.execSQL("DROP TABLE IF EXISTS message_search_metadata")
+        }
+    }
+
+    suspend fun ensureIndex(
+        force: Boolean = false,
+        onProgress: (current: Int, total: Int) -> Unit = { _, _ -> },
+    ) = withContext(Dispatchers.IO) {
+        indexMutex.withLock {
+            db.execSQL("CREATE TABLE IF NOT EXISTS message_search_metadata (version INTEGER NOT NULL)")
+            val version = db.query("SELECT version FROM message_search_metadata LIMIT 1").use {
+                if (it.moveToFirst()) it.getInt(0) else 0
+            }
+            if (!force && version == 1) return@withLock
+            db.execSQL("DELETE FROM message_search_metadata")
+            val ids = database.conversationDao().getAllIds()
+            onProgress(0, ids.size)
+            db.execSQL("DELETE FROM message_fts")
+            ids.forEachIndexed { index, id ->
+                currentCoroutineContext().ensureActive()
+                database.withTransaction { indexStoredConversation(id) }
+                onProgress(index + 1, ids.size)
+            }
+            db.execSQL("INSERT INTO message_search_metadata(version) VALUES (1)")
+        }
     }
 
     suspend fun search(
@@ -71,22 +134,24 @@ class MessageFtsManager(private val database: AppDatabase) {
         // 只搜这些助手的对话，null 表示不限
         assistantIds: Collection<String>? = null,
     ): List<MessageSearchResult> = withContext(Dispatchers.IO) {
-        val results = mutableListOf<MessageSearchResult>()
-        if (assistantIds != null && assistantIds.isEmpty()) return@withContext results
-        val matchQuery = buildFtsMatchQuery(keyword, ::simpleQuery) ?: return@withContext results
-        val assistantFilter = if (assistantIds != null) {
-            """
+        ensureIndex()
+        indexMutex.withLock {
+            val results = mutableListOf<MessageSearchResult>()
+            if (assistantIds != null && assistantIds.isEmpty()) return@withContext results
+            val matchQuery = buildFtsMatchQuery(keyword, ::simpleQuery) ?: return@withContext results
+            val assistantFilter = if (assistantIds != null) {
+                """
             AND EXISTS (
                 SELECT 1 FROM conversationentity AS conversation
                 WHERE conversation.id = message_fts.conversation_id
                   AND conversation.assistant_id IN (${assistantIds.joinToString { "?" }})
             )
-            """.trimIndent()
-        } else {
-            ""
-        }
-        val cursor = db.query(
-            """
+                """.trimIndent()
+            } else {
+                ""
+            }
+            val cursor = db.query(
+                """
             SELECT node_id, message_id, conversation_id, title, update_at,
                    simple_snippet(message_fts, 0, '[', ']', '...', 30) AS snippet
             FROM message_fts
@@ -94,25 +159,105 @@ class MessageFtsManager(private val database: AppDatabase) {
             $assistantFilter
             ORDER BY ${sort.orderBy}
             LIMIT 50
-            """.trimIndent(),
-            arrayOf(matchQuery, *assistantIds.orEmpty().toTypedArray())
-        )
-        Log.i(TAG, "search: $keyword")
-        cursor.use {
-            while (it.moveToNext()) {
-                results.add(
-                    MessageSearchResult(
-                        nodeId = it.getString(0),
-                        messageId = it.getString(1),
-                        conversationId = it.getString(2),
-                        title = it.getString(3),
-                        updateAt = Instant.ofEpochMilli(it.getLong(4)),
-                        snippet = it.getString(5),
+                """.trimIndent(),
+                arrayOf(matchQuery, *assistantIds.orEmpty().toTypedArray())
+            )
+            Log.i(TAG, "search: $keyword")
+            cursor.use {
+                while (it.moveToNext()) {
+                    results.add(
+                        MessageSearchResult(
+                            nodeId = it.getString(0),
+                            messageId = it.getString(1),
+                            conversationId = it.getString(2),
+                            title = it.getString(3),
+                            updateAt = Instant.ofEpochMilli(it.getLong(4)),
+                            snippet = it.getString(5),
+                        )
                     )
-                )
+                }
+            }
+            results
+        }
+    }
+
+    /** UI-only occurrence search; legacy snippets and the Web/tool result contract stay unchanged. */
+    suspend fun searchCandidates(
+        keyword: String,
+        sort: MessageSearchSort,
+        assistantIds: Collection<String>?,
+    ): List<MessageSearchCandidate> = withContext(Dispatchers.IO) {
+        ensureIndex()
+        indexMutex.withLock {
+            if (assistantIds != null && assistantIds.isEmpty()) return@withLock emptyList()
+            val query = buildFtsMatchQuery(keyword, ::simpleQuery) ?: return@withLock emptyList()
+            val filter = if (assistantIds == null) {
+                ""
+            } else {
+                "AND conversation.assistant_id IN (${assistantIds.joinToString { "?" }})"
+            }
+            val open = "\uE000${Uuid.random()}\uE001"
+            val close = "\uE002${Uuid.random()}\uE003"
+            fun readCandidates(positions: Boolean): List<MessageSearchCandidate> {
+                val highlight = if (positions) {
+                    "simple_highlight_pos(message_fts, 0)"
+                } else {
+                    "simple_highlight(message_fts, 0, ?, ?)"
+                }
+                val arguments = buildList<String> {
+                    if (!positions) addAll(listOf(open, close))
+                    add(query)
+                    addAll(assistantIds.orEmpty())
+                }
+                return db.query(
+                    """
+                    SELECT node_id, message_id, conversation_id, message_fts.title, update_at,
+                           message_fts.text, $highlight, conversation.assistant_id
+                    FROM message_fts
+                    JOIN conversationentity AS conversation ON conversation.id = message_fts.conversation_id
+                    WHERE message_fts.text MATCH ? $filter
+                    ORDER BY ${sort.orderBy.replace(
+                        "rank",
+                        "message_fts.rank"
+                    ).replace("update_at", "message_fts.update_at")}, message_id
+                    LIMIT 50
+                    """.trimIndent(),
+                    arguments.toTypedArray(),
+                ).use { cursor ->
+                    buildList {
+                        while (cursor.moveToNext()) {
+                            val text = cursor.getString(5)
+                            val ranges = if (positions) {
+                                decodeFtsMatchPositions(text, cursor.getString(6).orEmpty())
+                            } else {
+                                decodeHighlightedRanges(text, cursor.getString(6).orEmpty(), open, close)
+                            }
+                            add(
+                                MessageSearchCandidate(
+                                    result = MessageSearchResult(
+                                        nodeId = cursor.getString(0),
+                                        messageId = cursor.getString(1),
+                                        conversationId = cursor.getString(2),
+                                        title = cursor.getString(3),
+                                        updateAt = Instant.ofEpochMilli(cursor.getLong(4)),
+                                        snippet = "",
+                                    ),
+                                    assistantId = cursor.getString(7),
+                                    matchedTerms = ranges.map { text.substring(it.start, it.end) }.distinct(),
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            try {
+                readCandidates(supportsPositions)
+            } catch (e: Exception) {
+                if (!supportsPositions || e.message?.contains("no such function", ignoreCase = true) != true) throw e
+                supportsPositions = false
+                readCandidates(false)
             }
         }
-        results
     }
 
     // simple 扩展生成的查询，带拼音展开和前缀匹配
@@ -155,4 +300,26 @@ private fun Char.isAsciiLetterOrDigit(): Boolean = this in 'a'..'z' || this in '
 private fun UIMessage.extractFtsText(): String =
     parts.filterIsInstance<UIMessagePart.Text>()
         .joinToString("\n") { it.text }
-        .take(10_000)
+
+internal fun decodeHighlightedRanges(text: String, highlighted: String, open: String, close: String): List<SearchTextRange> {
+    require(open !in text && close !in text)
+    val restored = StringBuilder()
+    val ranges = mutableListOf<SearchTextRange>()
+    var cursor = 0
+    while (cursor < highlighted.length) {
+        val start = highlighted.indexOf(open, cursor)
+        if (start < 0) {
+            restored.append(highlighted, cursor, highlighted.length)
+            break
+        }
+        restored.append(highlighted, cursor, start)
+        val end = highlighted.indexOf(close, start + open.length)
+        require(end >= 0)
+        val rangeStart = restored.length
+        restored.append(highlighted, start + open.length, end)
+        ranges += SearchTextRange(rangeStart, restored.length)
+        cursor = end + close.length
+    }
+    require(restored.toString() == text)
+    return ranges
+}

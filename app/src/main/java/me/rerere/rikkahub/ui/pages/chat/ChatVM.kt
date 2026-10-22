@@ -13,6 +13,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.analytics.FirebaseAnalytics
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,6 +25,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -34,20 +37,26 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.NodeFavoriteTarget
+import me.rerere.rikkahub.data.model.SearchJumpTarget
 import me.rerere.rikkahub.data.model.getAssistantOf
 import me.rerere.rikkahub.data.model.getChatModelOf
+import me.rerere.rikkahub.data.model.replaceRegexes
+import me.rerere.rikkahub.data.model.searchContentFingerprint
 import me.rerere.rikkahub.data.repository.FavoriteRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.service.ChatService
-import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.ui.hooks.ChatInputState
+import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.rikkahub.web.ApiException
+import me.rerere.ui.markdown.parseMarkdown
+import me.rerere.ui.markdown.searchSegments
 import java.util.Locale
 import kotlin.uuid.Uuid
 
@@ -66,6 +75,12 @@ class ChatVM(
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
     var chatListInitialized by mutableStateOf(false) // 聊天列表是否已经滚动到底部
+    var conversationInitialized by mutableStateOf(false)
+        private set
+    var conversationSearchQuery by mutableStateOf("")
+    var activeSearchTarget by mutableStateOf<SearchJumpTarget?>(null)
+    var searchReturnToGlobal by mutableStateOf(false)
+    var handledSearchRequestId: String? = null
 
     // 聊天输入状态 - 保存在 ViewModel 中避免 TransactionTooLargeException
     val inputState = ChatInputState()
@@ -95,6 +110,7 @@ class ChatVM(
         // 初始化对话
         viewModelScope.launch {
             chatService.initializeConversation(_conversationId)
+            conversationInitialized = true
         }
 
         // 记住对话ID, 方便下次启动恢复
@@ -227,7 +243,7 @@ class ChatVM(
      * @param content 消息内容
      * @param answer 是否触发消息生成，如果为false，则仅添加消息到消息列表中
      */
-    fun handleMessageSend(content: List<UIMessagePart>,answer: Boolean = true) {
+    fun handleMessageSend(content: List<UIMessagePart>, answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
         analytics.logEvent("ai_send_message", null)
 
@@ -362,6 +378,44 @@ class ChatVM(
         }
     }
 
+    suspend fun activateSearchTarget(target: SearchJumpTarget): Boolean {
+        val node = conversation.value.messageNodes.firstOrNull { it.id.toString() == target.nodeId } ?: return false
+        val index = node.messages.indexOfFirst { it.id.toString() == target.messageId }
+        val message = node.messages.getOrNull(index) ?: return false
+        val part = message.parts.getOrNull(target.partIndex) as? UIMessagePart.Text ?: return false
+        val effectiveAssistant = settings.value.getAssistantOf(conversation.value)
+        val valid = withContext(Dispatchers.Default) {
+            val scope = if (message.role ==
+                MessageRole.USER) {
+                AssistantAffectScope.USER
+            } else {
+                AssistantAffectScope.ASSISTANT
+            }
+            val text = part.text.replaceRegexes(effectiveAssistant, scope, visual = true)
+            if (text.length < target.contentLength ||
+                searchContentFingerprint(text.take(target.contentLength)) != target.contentFingerprint
+            ) {
+                return@withContext false
+            }
+            parseMarkdown(text).searchSegments().any {
+                it.path == target.segmentPath && target.start >= 0 && target.end <= it.text.length &&
+                    target.start < target.end && it.text.substring(target.start, target.end) == target.matchedText
+            }
+        }
+        if (!valid) return false
+        try {
+            if (node.selectIndex != index) chatService.selectMessageNode(_conversationId, node.id, index)
+        } catch (_: ApiException) {
+            return false
+        }
+        // Validation is asynchronous; a deletion or edit must not revive an obsolete jump.
+        val latest = conversation.value.messageNodes.firstOrNull { it.id == node.id }?.currentMessage
+        if (latest?.id != message.id || latest.parts.getOrNull(target.partIndex) != part) return false
+        conversationSearchQuery = target.query
+        activeSearchTarget = target
+        return true
+    }
+
     fun updateConversationSystemPrompt(systemPrompt: String?) {
         viewModelScope.launch {
             chatService.updateConversationSystemPrompt(_conversationId, systemPrompt)
@@ -393,5 +447,4 @@ class ChatVM(
             chatService.setNodeFavorite(_conversationId, node.id, favorite = !currentlyFavorited)
         }
     }
-
 }

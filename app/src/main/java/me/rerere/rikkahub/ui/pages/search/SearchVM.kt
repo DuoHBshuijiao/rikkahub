@@ -1,22 +1,26 @@
 package me.rerere.rikkahub.ui.pages.search
 
+import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.db.fts.MessageSearchResult
 import me.rerere.rikkahub.data.db.fts.MessageSearchSort
+import me.rerere.rikkahub.data.model.MessageSearchHit
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
@@ -57,7 +61,7 @@ class SearchVM(
         }.getOrDefault(MessageSearchSort.RELEVANCE)
     )
         private set
-    var results by mutableStateOf<List<MessageSearchResult>>(emptyList())
+    var results by mutableStateOf<List<MessageSearchHit>>(emptyList())
         private set
     var isLoading by mutableStateOf(false)
         private set
@@ -65,8 +69,11 @@ class SearchVM(
         private set
     var rebuildProgress by mutableStateOf(0 to 0)
         private set
+    var errorMessage by mutableStateOf<String?>(null)
+        private set
 
     init {
+        prepareIndex(force = false)
         viewModelScope.launch {
             searchRequests.receiveAsFlow().collectLatest { request -> performSearch(request) }
         }
@@ -122,13 +129,30 @@ class SearchVM(
     }
 
     fun rebuildIndex() {
+        prepareIndex(force = true)
+    }
+
+    private fun prepareIndex(force: Boolean) {
         viewModelScope.launch {
             isRebuilding = true
             rebuildProgress = 0 to 0
+            errorMessage = null
             try {
-                conversationRepo.rebuildAllIndexes { current, total ->
+                val progress: (Int, Int) -> Unit = { current, total ->
                     rebuildProgress = current to total
                 }
+                if (force) {
+                    conversationRepo.rebuildAllIndexes(
+                        progress
+                    )
+                } else {
+                    conversationRepo.ensureSearchIndex(progress)
+                }
+                search()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                errorMessage = "搜索索引更新失败，请重试：${e.localizedMessage.orEmpty()}"
             } finally {
                 isRebuilding = false
             }
@@ -137,6 +161,7 @@ class SearchVM(
 
     private suspend fun performSearch(request: SearchRequest) {
         results = emptyList()
+        errorMessage = null
         if (request.query.isBlank() ||
             (request.scope == MessageSearchScope.CURRENT_ASSISTANT && request.assistantId == null)
         ) {
@@ -145,7 +170,18 @@ class SearchVM(
         isLoading = true
         try {
             if (request.debounce) delay(300L)
-            results = conversationRepo.searchMessages(request.query, request.sort, request.assistantId)
+            val hits = conversationRepo.searchMessageHits(
+                request.query,
+                request.sort,
+                request.assistantId,
+                settingsStore.settingsFlow.first(),
+            )
+            currentCoroutineContext().ensureActive()
+            results = hits
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            errorMessage = "搜索失败，请重试：${e.localizedMessage.orEmpty()}"
         } finally {
             isLoading = false
         }

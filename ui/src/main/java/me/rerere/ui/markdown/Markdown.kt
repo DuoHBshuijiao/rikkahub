@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.TextStyle
@@ -43,6 +44,8 @@ fun Markdown(
     components: MarkdownComponents = MarkdownDefaults.components,
     softBreakAsLineBreak: Boolean = true,
     onLinkClick: ((url: String) -> Unit)? = null,
+    searchTarget: MarkdownSearchTarget? = null,
+    onSearchPosition: (Rect) -> Unit = {},
 ) {
     Markdown(
         document = rememberMarkdownDocument(content, softBreakAsLineBreak),
@@ -51,6 +54,8 @@ fun Markdown(
         theme = theme,
         components = components,
         onLinkClick = onLinkClick,
+        searchTarget = searchTarget,
+        onSearchPosition = onSearchPosition,
     )
 }
 
@@ -63,6 +68,8 @@ fun Markdown(
     theme: MarkdownTheme = MarkdownDefaults.theme(style),
     components: MarkdownComponents = MarkdownDefaults.components,
     onLinkClick: ((url: String) -> Unit)? = null,
+    searchTarget: MarkdownSearchTarget? = null,
+    onSearchPosition: (Rect) -> Unit = {},
 ) {
     val currentOnLinkClick by rememberUpdatedState(onLinkClick)
     val handlesLinks = onLinkClick != null
@@ -78,7 +85,14 @@ fun Markdown(
     val context = remember(theme, components, linkListener) {
         MarkdownContext(theme, components, linkListener)
     }
-    CompositionLocalProvider(LocalMarkdownContext provides context) {
+    val search = remember(searchTarget, onSearchPosition) {
+        searchTarget?.let { MarkdownSearchContext(it, onSearchPosition) }
+    }
+    CompositionLocalProvider(
+        LocalMarkdownContext provides context,
+        LocalMarkdownSearch provides search,
+        LocalMarkdownBlockPath provides "",
+    ) {
         ProvideTextStyle(style) {
             MarkdownBlocks(blocks = document.blocks, modifier = modifier)
         }

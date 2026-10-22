@@ -8,22 +8,30 @@ import androidx.paging.PagingSource
 import androidx.paging.map
 import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.datastore.ConversationSortOrder
+import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.db.AppDatabase
-import me.rerere.rikkahub.data.db.fts.MessageFtsManager
-import me.rerere.rikkahub.data.db.fts.MessageSearchSort
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.FavoriteDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
+import me.rerere.rikkahub.data.db.fts.MessageFtsManager
+import me.rerere.rikkahub.data.db.fts.MessageSearchSort
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.model.MessageSearchHit
+import me.rerere.rikkahub.data.model.buildMessageSearchHits
 import me.rerere.rikkahub.utils.JsonInstant
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -293,7 +301,9 @@ class ConversationRepository(
         return if (entity != null) {
             val nodes = loadMessageNodes(entity.id)
             conversationEntityToConversation(entity, nodes)
-        } else null
+        } else {
+            null
+        }
     }
 
     suspend fun existsConversationById(uuid: Uuid): Boolean {
@@ -339,13 +349,13 @@ class ConversationRepository(
         } else {
             conversation
         }
-        messageFtsManager.deleteConversation(conversation.id.toString())
         database.withTransaction {
             // message_node 会通过 CASCADE 自动删除
             conversationDAO.delete(
                 conversationToConversationEntity(conversation)
             )
         }
+        messageFtsManager.deleteConversation(conversation.id.toString())
         filesManager.deleteChatFiles(fullConversation.files)
     }
 
@@ -360,15 +370,44 @@ class ConversationRepository(
         messageFtsManager.search(keyword, MessageSearchSort.RELEVANCE, assistantIds.map { it.toString() })
 
     suspend fun rebuildAllIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
-        messageFtsManager.deleteAll()
-        val allIds = conversationDAO.getAllIds()
-        val total = allIds.size
-        allIds.forEachIndexed { index, id ->
-            val entity = conversationDAO.getConversationById(id) ?: return@forEachIndexed
-            val nodes = loadMessageNodes(entity.id)
-            val conversation = conversationEntityToConversation(entity, nodes)
-            messageFtsManager.indexConversation(conversation)
-            onProgress(index + 1, total)
+        messageFtsManager.ensureIndex(force = true, onProgress = onProgress)
+    }
+
+    suspend fun ensureSearchIndex(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
+        messageFtsManager.ensureIndex(onProgress = onProgress)
+    }
+
+    suspend fun searchMessageHits(
+        keyword: String,
+        sort: MessageSearchSort,
+        assistantId: Uuid?,
+        settings: Settings,
+    ): List<MessageSearchHit> = withContext(Dispatchers.Default) {
+        val candidates = messageFtsManager.searchCandidates(keyword, sort, assistantId?.let { listOf(it.toString()) })
+        val messagesByNode = mutableMapOf<String, List<UIMessage>>()
+        val context = currentCoroutineContext()
+        buildList {
+            candidates.forEach { candidate ->
+                context.ensureActive()
+                val result = candidate.result
+                val messages = messagesByNode[result.nodeId] ?: messageNodeDAO.getNodeById(result.nodeId)?.let {
+                    JsonInstant.decodeFromString<List<UIMessage>>(it.messages)
+                }.orEmpty().also { messagesByNode[result.nodeId] = it }
+                val message = messages.firstOrNull { it.id.toString() == result.messageId } ?: return@forEach
+                addAll(
+                    buildMessageSearchHits(
+                        conversationId = result.conversationId,
+                        nodeId = result.nodeId,
+                        message = message,
+                        assistant = settings.getAssistantById(Uuid.parse(candidate.assistantId)),
+                        query = keyword,
+                        title = result.title,
+                        updateAt = result.updateAt,
+                        fallbackTerms = candidate.matchedTerms,
+                        checkCancelled = { context.ensureActive() },
+                    )
+                )
+            }
         }
     }
 
@@ -377,7 +416,7 @@ class ConversationRepository(
         return ConversationEntity(
             id = conversation.id.toString(),
             title = conversation.title,
-            nodes = "[]",  // nodes 现在存储在单独的表中
+            nodes = "[]", // nodes 现在存储在单独的表中
             createAt = conversation.createAt.toEpochMilli(),
             updateAt = conversation.updateAt.toEpochMilli(),
             assistantId = conversation.assistantId.toString(),

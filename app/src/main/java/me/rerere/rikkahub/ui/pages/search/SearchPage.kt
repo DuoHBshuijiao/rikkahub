@@ -1,8 +1,5 @@
 package me.rerere.rikkahub.ui.pages.search
 
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Refresh01
-import me.rerere.hugeicons.stroke.Sorting01
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,49 +9,55 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Refresh01
+import me.rerere.hugeicons.stroke.Sorting01
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.db.fts.MessageSearchResult
 import me.rerere.rikkahub.data.db.fts.MessageSearchSort
+import me.rerere.rikkahub.data.model.MessageSearchHit
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.ui.SearchSnippetText
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.navigateToChatPage
@@ -70,10 +73,15 @@ fun SearchPage(vm: SearchVM = koinViewModel()) {
     val navController = LocalNavController.current
     val focusRequester = remember { FocusRequester() }
     var showRebuildDialog by remember { mutableStateOf(false) }
+    var requestedFocus by rememberSaveable { mutableStateOf(false) }
+    val resultsListState = rememberLazyListState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+        if (!requestedFocus) {
+            focusRequester.requestFocus()
+            requestedFocus = true
+        }
     }
 
     if (showRebuildDialog) {
@@ -180,6 +188,15 @@ fun SearchPage(vm: SearchVM = koinViewModel()) {
                 }
 
                 when {
+                    vm.errorMessage != null -> {
+                        Column(
+                            modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(vm.errorMessage.orEmpty(), color = MaterialTheme.colorScheme.error)
+                            TextButton(onClick = { vm.rebuildIndex() }) { Text("重试") }
+                        }
+                    }
                     vm.isRebuilding -> {
                         Box(
                             modifier = Modifier.fillMaxSize(),
@@ -187,11 +204,15 @@ fun SearchPage(vm: SearchVM = koinViewModel()) {
                         ) {
                             val (current, total) = vm.rebuildProgress
                             Text(
-                                text = if (total > 0) stringResource(
-                                    R.string.search_page_rebuilding,
-                                    current,
-                                    total
-                                ) else stringResource(R.string.search_page_rebuilding_simple),
+                                text = if (total > 0) {
+                                    stringResource(
+                                        R.string.search_page_rebuilding,
+                                        current,
+                                        total
+                                    )
+                                } else {
+                                    stringResource(R.string.search_page_rebuilding_simple)
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -225,18 +246,21 @@ fun SearchPage(vm: SearchVM = koinViewModel()) {
 
                     else -> {
                         LazyColumn(
+                            state = resultsListState,
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxSize(),
                         ) {
-                            items(vm.results) { result ->
+                            items(vm.results, key = { it.key }, contentType = { "searchHit" }) { result ->
                                 SearchResultItem(
                                     result = result,
                                     onClick = {
                                         navigateToChatPage(
                                             navController,
                                             chatId = Uuid.parse(result.conversationId),
-                                            nodeId = Uuid.parse(result.nodeId),
+                                            nodeId = Uuid.parse(result.target.nodeId),
+                                            searchTarget = result.target.newRequest(),
+                                            keepBackStack = true,
                                         )
                                     }
                                 )
@@ -297,35 +321,10 @@ private fun SortMenuButton(
 
 @Composable
 private fun SearchResultItem(
-    result: MessageSearchResult,
+    result: MessageSearchHit,
     onClick: () -> Unit,
 ) {
-    val highlightColor = MaterialTheme.colorScheme.tertiaryContainer
     val untitled = stringResource(R.string.search_page_untitled)
-    val snippetText = buildAnnotatedString {
-        val snippet = result.snippet
-        var index = 0
-        while (index < snippet.length) {
-            val start = snippet.indexOf('[', index)
-            if (start == -1) {
-                append(snippet.substring(index))
-                break
-            }
-            if (start > index) {
-                append(snippet.substring(index, start))
-            }
-            val end = snippet.indexOf(']', start + 1)
-            if (end == -1) {
-                append(snippet.substring(start))
-                break
-            }
-            val matched = snippet.substring(start + 1, end)
-            withStyle(SpanStyle(background = highlightColor)) {
-                append(matched)
-            }
-            index = end + 1
-        }
-    }
     val formattedTime = remember(result.updateAt) {
         result.updateAt.toLocalDateTime()
     }
@@ -346,10 +345,9 @@ private fun SearchResultItem(
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Text(
-                text = snippetText,
+            SearchSnippetText(
+                snippet = result.snippet,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = formattedTime,

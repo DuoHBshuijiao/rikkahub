@@ -65,13 +65,16 @@ internal fun MarkdownBlocks(
     blocks: List<MarkdownBlock>,
     modifier: Modifier = Modifier,
     spacing: Dp = LocalMarkdownContext.current.theme.blockSpacing,
+    path: String = LocalMarkdownBlockPath.current,
 ) {
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(spacing),
     ) {
         blocks.fastForEachIndexed { index, block ->
-            MarkdownBlockNode(block = block, first = index == 0)
+            CompositionLocalProvider(LocalMarkdownBlockPath provides "$path/$index") {
+                MarkdownBlockNode(block = block, first = index == 0)
+            }
         }
     }
 }
@@ -125,7 +128,7 @@ private fun InlineContent(
     val alignedModifier = if (fillWidthToAlign && textAlign.needsFullWidth()) modifier.fillMaxWidth() else modifier
 
     when (val single = segments.singleOrNull()) {
-        is InlineSegment.Text -> InlineText(single.content, alignedModifier)
+        is InlineSegment.Text -> InlineText(single.content, alignedModifier, "${LocalMarkdownBlockPath.current}/text/0")
         is InlineSegment.Math -> Box(modifier) { components.mathBlock(single.formula) }
         else -> FlowRow(
             modifier = alignedModifier,
@@ -133,9 +136,12 @@ private fun InlineContent(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
-            segments.fastForEach { segment ->
+            segments.fastForEachIndexed { index, segment ->
                 when (segment) {
-                    is InlineSegment.Text -> InlineText(segment.content)
+                    is InlineSegment.Text -> InlineText(
+                        segment.content,
+                        path = "${LocalMarkdownBlockPath.current}/text/$index"
+                    )
                     is InlineSegment.Image -> components.image(segment.image, segment.link)
                     is InlineSegment.Math -> Box(Modifier.fillMaxWidth()) { components.mathBlock(segment.formula) }
                 }
@@ -212,6 +218,7 @@ private fun ListBlock(block: MarkdownBlock.ListBlock) {
                         blocks = item.children,
                         modifier = Modifier.weight(1f, fill = false),
                         spacing = spacing,
+                        path = "${LocalMarkdownBlockPath.current}/item/$index",
                     )
                 }
             }
@@ -225,7 +232,8 @@ private fun TaskCheckbox(checked: Boolean) {
     val style = LocalTextStyle.current
     val (boxSize, lineHeight) = with(LocalDensity.current) {
         val fontSize = if (style.fontSize.isSpecified) style.fontSize.toDp() else 16.dp
-        fontSize to if (style.lineHeight.isSpecified && style.lineHeight.isSp) style.lineHeight.toDp() else fontSize * 1.4f
+        fontSize to
+            if (style.lineHeight.isSpecified && style.lineHeight.isSp) style.lineHeight.toDp() else fontSize * 1.4f
     }
     // 外层占一行文字的高度，让复选框和第一行文字垂直居中对齐
     Box(
@@ -259,15 +267,20 @@ internal fun MarkdownTable(
     shape: Shape,
 ) {
     val columnCount = max(block.header.size, block.rows.maxOfOrNull { it.size } ?: 0)
+    val path = LocalMarkdownBlockPath.current
     val headers: List<@Composable () -> Unit> = block.header.mapIndexed { index, cell ->
         @Composable {
-            TableCellContent(cell, block.alignments.getOrNull(index), FontWeight.SemiBold)
+            CompositionLocalProvider(LocalMarkdownBlockPath provides "$path/header/$index") {
+                TableCellContent(cell, block.alignments.getOrNull(index), FontWeight.SemiBold)
+            }
         }
     }
-    val rows: List<List<@Composable () -> Unit>> = block.rows.map { row ->
+    val rows: List<List<@Composable () -> Unit>> = block.rows.mapIndexed { rowIndex, row ->
         row.mapIndexed { index, cell ->
             @Composable {
-                TableCellContent(cell, block.alignments.getOrNull(index), null)
+                CompositionLocalProvider(LocalMarkdownBlockPath provides "$path/row/$rowIndex/$index") {
+                    TableCellContent(cell, block.alignments.getOrNull(index), null)
+                }
             }
         }
     }
@@ -310,7 +323,10 @@ private fun DetailsBlock(block: MarkdownBlock.Details) {
     val theme = LocalMarkdownContext.current.theme
     // 流式输出时标签是一点点出现的，open 属性后到的话要跟着更新
     var expanded by rememberSaveable(block.open) { mutableStateOf(block.open) }
-    val rotation by animateFloatAsState(if (expanded) 90f else 0f)
+    val path = LocalMarkdownBlockPath.current
+    val targetPath = LocalMarkdownSearch.current?.target?.segmentPath
+    val showContent = expanded || (targetPath?.startsWith("$path/") == true && targetPath != "$path/summary")
+    val rotation by animateFloatAsState(if (showContent) 90f else 0f)
     Column {
         Row(
             modifier = Modifier
@@ -328,10 +344,10 @@ private fun DetailsBlock(block: MarkdownBlock.Details) {
                     .rotate(rotation),
             )
             ProvideTextStyle(TextStyle(fontWeight = FontWeight.Medium)) {
-                InlineText(block.summary, Modifier.weight(1f, fill = false))
+                InlineText(block.summary, Modifier.weight(1f, fill = false), "$path/summary")
             }
         }
-        AnimatedVisibility(visible = expanded) {
+        AnimatedVisibility(visible = showContent) {
             MarkdownBlocks(
                 blocks = block.children,
                 modifier = Modifier.padding(start = 22.dp, top = theme.blockSpacing / 2),

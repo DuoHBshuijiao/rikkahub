@@ -9,6 +9,9 @@ import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 
 @Dao
 interface MessageNodeDAO {
+    @Query("SELECT * FROM message_node WHERE id = :nodeId")
+    suspend fun getNodeById(nodeId: String): MessageNodeEntity?
+
     // 使用与 messages 相同的 JSON 编码，保守保留所有分支中出现的 URL。
     @Query("SELECT EXISTS(SELECT 1 FROM message_node WHERE instr(messages, :encodedFileUrl) > 0)")
     suspend fun hasFileReference(encodedFileUrl: String): Boolean

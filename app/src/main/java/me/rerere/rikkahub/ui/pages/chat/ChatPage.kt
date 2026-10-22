@@ -47,7 +47,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.ui.toast.ToastType
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.Job
@@ -68,6 +67,7 @@ import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.SearchJumpTarget
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
@@ -84,6 +84,7 @@ import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.navigateToChatPage
+import me.rerere.ui.toast.ToastType
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
@@ -91,7 +92,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
 
 @Composable
-fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
+fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, searchTarget: SearchJumpTarget? = null) {
     val vm: ChatVM = koinViewModel(
         parameters = {
             parametersOf(id.toString())
@@ -119,6 +120,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val toaster = LocalToaster.current
 
     // Handle back press when drawer is open
     BackHandler(enabled = drawerState.isOpen) {
@@ -180,8 +182,12 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
     }
 
     val chatListState = rememberLazyListState()
-    LaunchedEffect(nodeId, conversation.messageNodes.size) {
-        if (!vm.chatListInitialized && conversation.messageNodes.isNotEmpty()) {
+    LaunchedEffect(nodeId, conversation.messageNodes.size, vm.conversationInitialized) {
+        if (!vm.chatListInitialized && vm.conversationInitialized) {
+            if (searchTarget != null) {
+                vm.chatListInitialized = true
+                return@LaunchedEffect
+            }
             if (nodeId != null) {
                 val index = conversation.messageNodes.indexOfFirst { it.id == nodeId }
                 if (index >= 0) {
@@ -191,6 +197,16 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                 chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
             }
             vm.chatListInitialized = true
+        }
+    }
+
+    LaunchedEffect(searchTarget?.requestId, vm.conversationInitialized) {
+        if (searchTarget != null && vm.conversationInitialized && vm.handledSearchRequestId != searchTarget.requestId) {
+            vm.handledSearchRequestId = searchTarget.requestId
+            vm.searchReturnToGlobal = true
+            if (!vm.activateSearchTarget(searchTarget)) {
+                toaster.show("该命中内容已变更或不再显示，请返回搜索后重试", type = ToastType.Error)
+            }
         }
     }
 
@@ -289,6 +305,20 @@ private fun ChatPageContent(
     val workspaceRepository: WorkspaceRepository = koinInject()
 
     var previewMode by rememberSaveable { mutableStateOf(false) }
+    var searchJumpJob by remember { mutableStateOf<Job?>(null) }
+    val searchKeyboard = LocalSoftwareKeyboardController.current
+    val searchFocus = LocalFocusManager.current
+    LaunchedEffect(vm.activeSearchTarget?.requestId) {
+        if (vm.activeSearchTarget != null) previewMode = false
+    }
+    BackHandler(enabled = previewMode || (vm.activeSearchTarget != null && !vm.searchReturnToGlobal)) {
+        if (previewMode) {
+            previewMode = false
+            vm.activeSearchTarget = null
+        } else {
+            previewMode = true
+        }
+    }
     val hazeState = rememberHazeState()
     var showFilesSheet by remember { mutableStateOf(false) }
     val attachmentPickerActions = rememberChatAttachmentPickerActions(
@@ -421,6 +451,30 @@ private fun ChatPageContent(
                 previewMode = previewMode,
                 settings = setting,
                 hazeState = hazeState,
+                searchQuery = vm.conversationSearchQuery,
+                onSearchQueryChange = { vm.conversationSearchQuery = it },
+                searchTarget = vm.activeSearchTarget,
+                onClearSearchTarget = { vm.activeSearchTarget = null },
+                onReturnToSearch = {
+                    if (vm.searchReturnToGlobal) navController.popBackStack() else previewMode = true
+                },
+                onSearchError = {
+                    vm.activeSearchTarget = null
+                    toaster.show("无法定位该命中内容，请重新搜索", type = ToastType.Error)
+                },
+                onJumpToSearchHit = { target ->
+                    searchFocus.clearFocus()
+                    searchKeyboard?.hide()
+                    searchJumpJob?.cancel()
+                    searchJumpJob = scope.launch {
+                        if (vm.activateSearchTarget(target.newRequest())) {
+                            vm.searchReturnToGlobal = false
+                            previewMode = false
+                        } else {
+                            toaster.show("该命中内容已变更或不再显示，请重新搜索", type = ToastType.Error)
+                        }
+                    }
+                },
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,
@@ -458,6 +512,7 @@ private fun ChatPageContent(
                     vm.clearTranslationField(message.id)
                 },
                 onJumpToMessage = { index ->
+                    vm.activeSearchTarget = null
                     previewMode = false
                     scope.launch {
                         chatListState.requestScrollToItem(index)
@@ -560,7 +615,9 @@ private fun ChatFilesPickerSheet(
                     keyboardController?.hide()
                     onStartVoiceMode()
                 }
-            } else null,
+            } else {
+                null
+            },
         )
     }
 }
@@ -619,7 +676,11 @@ private fun TopBar(
                     )
                     if (chatModel != null && provider != null) {
                         Text(
-                            text = "${assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }} / ${chatModel.displayName} (${provider.name})",
+                            text = "${assistant.name.ifBlank {
+                                stringResource(
+                                    R.string.assistant_page_default_assistant
+                                )
+                            }} / ${chatModel.displayName} (${provider.name})",
                             overflow = TextOverflow.Ellipsis,
                             maxLines = 1,
                             color = LocalContentColor.current.copy(0.65f),

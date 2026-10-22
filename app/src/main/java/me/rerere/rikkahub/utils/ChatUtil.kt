@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.model.SearchJumpTarget
 import me.rerere.rikkahub.ui.context.Navigator
 import kotlin.uuid.Uuid
 
@@ -16,16 +17,18 @@ fun navigateToChatPage(
     initText: String? = null,
     initFiles: List<Uri> = emptyList(),
     nodeId: Uuid? = null,
+    searchTarget: SearchJumpTarget? = null,
+    keepBackStack: Boolean = false,
 ) {
     Log.i(TAG, "navigateToChatPage: navigate to $chatId")
-    navigator.clearAndNavigate(
-        Screen.Chat(
-            id = chatId.toString(),
-            text = initText,
-            files = initFiles.map { it.toString() },
-            nodeId = nodeId?.toString(),
-        )
+    val screen = Screen.Chat(
+        id = chatId.toString(),
+        text = initText,
+        files = initFiles.map { it.toString() },
+        nodeId = nodeId?.toString(),
+        searchTarget = searchTarget,
     )
+    if (keepBackStack) navigator.navigate(screen) else navigator.clearAndNavigate(screen)
 }
 
 fun Context.copyMessageToClipboard(message: UIMessage) {

@@ -151,12 +151,17 @@ object MarkdownDefaults {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    text = block.code,
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    softWrap = false,
-                )
+                Box(Modifier.horizontalScroll(rememberScrollState())) {
+                    MarkdownSearchText(text = block.code) { highlight, onTextLayout ->
+                        Text(
+                            text = block.code,
+                            modifier = highlight,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            softWrap = false,
+                            onTextLayout = onTextLayout,
+                        )
+                    }
+                }
             }
         }
     }

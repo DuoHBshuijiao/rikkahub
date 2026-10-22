@@ -35,7 +35,7 @@ internal val LocalMarkdownContext = staticCompositionLocalOf<MarkdownContext> {
 
 /** 把一组行内节点渲染成一个 Text */
 @Composable
-internal fun InlineText(content: List<MarkdownInline>, modifier: Modifier = Modifier) {
+internal fun InlineText(content: List<MarkdownInline>, modifier: Modifier = Modifier, path: String) {
     val context = LocalMarkdownContext.current
     val style = LocalTextStyle.current
     val density = LocalDensity.current
@@ -43,20 +43,30 @@ internal fun InlineText(content: List<MarkdownInline>, modifier: Modifier = Modi
     val rendered = remember(content, context, style, density, contentColor) {
         InlineTextBuilder(context, MarkdownInlineScope(style, density, contentColor)).build(content)
     }
-    Text(
-        text = rendered.text,
-        modifier = modifier,
-        inlineContent = rendered.inlineContent,
-        // 行内公式可能比一行文字高，固定行高会让它和上下行叠在一起
-        style = if (rendered.hasMathWidget) style.copy(lineHeight = TextUnit.Unspecified) else style,
-    )
+    MarkdownSearchText(
+        text = remember(content) { content.searchText() },
+        path = path,
+        renderedOffset = rendered::renderedOffset,
+    ) { highlight, onTextLayout ->
+        Text(
+            text = rendered.text,
+            modifier = modifier.then(highlight),
+            inlineContent = rendered.inlineContent,
+            onTextLayout = onTextLayout,
+            // 行内公式可能比一行文字高，固定行高会让它和上下行叠在一起
+            style = if (rendered.hasMathWidget) style.copy(lineHeight = TextUnit.Unspecified) else style,
+        )
+    }
 }
 
 private class RenderedInlineText(
     val text: AnnotatedString,
     val inlineContent: Map<String, InlineTextContent>,
     val hasMathWidget: Boolean,
-)
+    val offsetShifts: List<Pair<Int, Int>>,
+) {
+    fun renderedOffset(offset: Int): Int = offset + (offsetShifts.lastOrNull { it.first <= offset }?.second ?: 0)
+}
 
 private val MATH_SOURCE_STYLE = SpanStyle(fontFamily = FontFamily.Monospace)
 
@@ -70,6 +80,8 @@ private class InlineTextBuilder(
     private val builder = AnnotatedString.Builder()
     private val inlineContent = mutableMapOf<String, InlineTextContent>()
     private var hasMathWidget = false
+    private var searchOffset = 0
+    private val offsetShifts = mutableListOf<Pair<Int, Int>>()
 
     // 还没闭合的引号：等待的闭引号，以及开引号在输出文本里的位置。引号可以跨越加粗、链接等节点
     private var pendingQuoteClose: Char? = null
@@ -77,20 +89,33 @@ private class InlineTextBuilder(
 
     fun build(content: List<MarkdownInline>): RenderedInlineText {
         append(content)
-        return RenderedInlineText(builder.toAnnotatedString(), inlineContent, hasMathWidget)
+        return RenderedInlineText(builder.toAnnotatedString(), inlineContent, hasMathWidget, offsetShifts)
     }
 
     private fun append(nodes: List<MarkdownInline>) = nodes.fastForEach { append(it) }
 
     private fun append(node: MarkdownInline) {
         when (node) {
-            is MarkdownInline.Text -> appendText(node.text)
+            is MarkdownInline.Text -> {
+                appendText(node.text)
+                searchOffset += node.text.length
+            }
             is MarkdownInline.Styled -> builder.withStyle(node.style) { append(node.children) }
-            is MarkdownInline.Code -> builder.withStyle(context.theme.inlineCode) { append(node.code) }
+            is MarkdownInline.Code -> {
+                builder.withStyle(context.theme.inlineCode) { append(node.code) }
+                searchOffset += node.code.length
+            }
             is MarkdownInline.Link -> appendLink(node)
-            is MarkdownInline.Math -> appendMath(node)
+            is MarkdownInline.Math -> {
+                appendMath(node)
+                searchOffset += node.formula.length
+                offsetShifts += searchOffset to builder.length - searchOffset
+            }
             // 图片在分段时已经被拆出去单独渲染，走到这里只剩替代文本可用
-            is MarkdownInline.Image -> builder.append(node.alt.orEmpty())
+            is MarkdownInline.Image -> {
+                builder.append(node.alt.orEmpty())
+                searchOffset += node.alt.orEmpty().length
+            }
         }
     }
 
@@ -116,7 +141,10 @@ private class InlineTextBuilder(
     private fun appendLink(link: MarkdownInline.Link) {
         val widget = context.components.inlineLink?.invoke(scope, link)
         if (widget != null) {
-            appendWidget(widget, alternateText = link.children.plainText())
+            val alternateText = link.children.plainText()
+            appendWidget(widget, alternateText = alternateText)
+            searchOffset += alternateText.length
+            offsetShifts += searchOffset to builder.length - searchOffset
             return
         }
         val annotation = LinkAnnotation.Url(
