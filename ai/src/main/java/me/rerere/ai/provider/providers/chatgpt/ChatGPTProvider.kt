@@ -58,6 +58,7 @@ internal val CODEX_CAPABILITIES = ResponseProviderCapabilities(
     systemMessageRole = "developer",
     supportsSamplingParams = false,
     alwaysIncludeEncryptedContent = true,
+    requiresEncryptedReasoning = true,
 )
 
 /**

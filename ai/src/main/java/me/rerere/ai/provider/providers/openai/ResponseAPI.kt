@@ -263,7 +263,21 @@ class ResponseAPI(
                         put("content", systemPrompt)
                     })
                 }
-                buildMessages(messages).forEach { add(it) }
+                val inputMessages = if (capabilities.requiresEncryptedReasoning) {
+                    messages.map { message ->
+                        // Codex 不回传明文 reasoning 或已知来自其他模型的加密推理。
+                        // 只过滤本次请求，保留会话中用于展示的原始思考内容。
+                        message.copy(parts = message.parts.filter { part ->
+                            part !is UIMessagePart.Reasoning || (
+                                (message.modelId == null || message.modelId == params.model.id) &&
+                                    !part.metadataAs<OpenAIReasoningMetadata>()?.encryptedContent.isNullOrBlank()
+                                )
+                        })
+                    }
+                } else {
+                    messages
+                }
+                buildMessages(inputMessages).forEach { add(it) }
             }
 
             // reasoning
@@ -783,6 +797,8 @@ internal data class ResponseProviderCapabilities(
     val supportsSamplingParams: Boolean = true,
     // 非推理模型也请求加密推理内容：不保存会话时，自带推理的模型要靠它接上多轮推理
     val alwaysIncludeEncryptedContent: Boolean = false,
+    // Codex 只回传带有效 encrypted_content 的 reasoning，跳过已知外来或明文思考
+    val requiresEncryptedReasoning: Boolean = false,
     // 推理档位对应的 reasoning.effort（参数依次是档位、模型 id），返回 null 时不带
     val reasoningEffort: (
         ReasoningLevel,
