@@ -113,6 +113,7 @@ import me.rerere.rikkahub.data.model.MessageSearchHit
 import me.rerere.rikkahub.data.model.SearchJumpTarget
 import me.rerere.rikkahub.data.model.buildMessageSearchHits
 import me.rerere.rikkahub.data.model.getAssistantOf
+import me.rerere.rikkahub.data.model.getUserPersonaOf
 import me.rerere.rikkahub.data.model.withConversation
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.message.ChatMessage
@@ -442,6 +443,7 @@ private fun ChatListNormal(
                                 model = node.currentMessage.modelId?.let(modelById::get)
                                     ?: node.currentMessage.snapshotModel(),
                                 assistant = assistant,
+                                userPersona = settings.getUserPersonaOf(conversation),
                                 loading = loading && index == lastMessageIndex,
                                 onRegenerate = {
                                     onRegenerate(node.currentMessage)

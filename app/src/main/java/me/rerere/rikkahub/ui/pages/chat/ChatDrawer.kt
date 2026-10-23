@@ -23,6 +23,7 @@ import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -57,6 +58,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ChartColumn
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Folder01
@@ -81,6 +83,8 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Folder
+import me.rerere.rikkahub.data.model.UserPersona
+import me.rerere.rikkahub.data.model.getUserPersonaOf
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.ui.components.ai.AssistantPicker
 import me.rerere.rikkahub.ui.components.ui.BackupReminderCard
@@ -141,16 +145,9 @@ fun ChatDrawerContent(
         initialValue = emptyMap(),
     )
 
-    // 昵称编辑状态
-    val nicknameEditState = useEditState<String> { newNickname ->
-        vm.updateSettings {
-            it.copy(
-                displaySetting = it.displaySetting.copy(
-                    userNickname = newNickname
-                )
-            )
-        }
-    }
+    val userPersona = settings.getUserPersonaOf(current)
+    var showUserPersonaSheet by remember { mutableStateOf(false) }
+    val nicknameEditState = useEditState<UserPersona> { vm.updateUserPersona(it) }
 
     // 移动对话状态
     var showMoveToAssistantSheet by remember { mutableStateOf(false) }
@@ -207,21 +204,17 @@ fun ChatDrawerContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.large)
+                    .clickable(onClickLabel = "切换用户身份") { showUserPersonaSheet = true }
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 UIAvatar(
-                    name = settings.displaySetting.userNickname.ifBlank { stringResource(R.string.user_default_name) },
-                    value = settings.displaySetting.userAvatar,
+                    name = userPersona.nickname.ifBlank { stringResource(R.string.user_default_name) },
+                    value = userPersona.avatar,
                     onUpdate = { newAvatar ->
-                        vm.updateSettings {
-                            it.copy(
-                                displaySetting = it.displaySetting.copy(
-                                    userAvatar = newAvatar
-                                )
-                            )
-                        }
+                        vm.updateUserPersona(userPersona.copy(avatar = newAvatar))
                     },
                     modifier = Modifier.size(50.dp),
                 )
@@ -235,12 +228,12 @@ fun ChatDrawerContent(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            text = settings.displaySetting.userNickname.ifBlank { stringResource(R.string.user_default_name) },
+                            text = userPersona.nickname.ifBlank { stringResource(R.string.user_default_name) },
                             style = MaterialTheme.typography.titleMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.clickable {
-                                nicknameEditState.open(settings.displaySetting.userNickname)
+                                nicknameEditState.open(userPersona)
                             }
                         )
 
@@ -249,7 +242,7 @@ fun ChatDrawerContent(
                             contentDescription = "Edit",
                             modifier = Modifier
                                 .onClick {
-                                    nicknameEditState.open(settings.displaySetting.userNickname)
+                                    nicknameEditState.open(userPersona)
                                 }
                                 .size(LocalTextStyle.current.fontSize.toDp())
                         )
@@ -257,6 +250,9 @@ fun ChatDrawerContent(
                     Greeting(
                         style = MaterialTheme.typography.labelMedium,
                     )
+                }
+                IconButton(onClick = { showUserPersonaSheet = true }) {
+                    Icon(HugeIcons.ArrowDown01, contentDescription = "切换用户身份")
                 }
             }
 
@@ -475,8 +471,8 @@ fun ChatDrawerContent(
             },
             text = {
                 OutlinedTextField(
-                    value = nickname,
-                    onValueChange = onUpdate,
+                    value = nickname.nickname,
+                    onValueChange = { onUpdate(nickname.copy(nickname = it)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     placeholder = { Text(stringResource(R.string.chat_page_nickname_placeholder)) }
@@ -500,6 +496,20 @@ fun ChatDrawerContent(
                     Text(stringResource(R.string.chat_page_cancel))
                 }
             }
+        )
+    }
+
+    if (showUserPersonaSheet) {
+        UserPersonaSheet(
+            personas = settings.userPersonas,
+            selectedId = userPersona.id,
+            onSelect = {
+                vm.selectUserPersona(it)
+                showUserPersonaSheet = false
+            },
+            onSave = { persona, create -> vm.updateUserPersona(persona, create) },
+            onDelete = { vm.deleteUserPersona(it) },
+            onDismiss = { showUserPersonaSheet = false },
         )
     }
 

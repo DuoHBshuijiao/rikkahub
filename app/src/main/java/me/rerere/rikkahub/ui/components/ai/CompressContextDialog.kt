@@ -7,8 +7,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ContainedLoadingIndicator
@@ -21,13 +22,17 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
@@ -45,10 +50,12 @@ fun CompressContextDialog(
 ) {
     var additionalPrompt by remember { mutableStateOf("") }
     // 默认全部压缩，请求前缀与对话一致，缓存命中最好
-    var keepRecentMessages by remember { mutableIntStateOf(0) }
+    var keepRecentMessagesInput by remember { mutableStateOf("0") }
+    val keepRecentMessages = keepRecentMessagesInput.toIntOrNull()
     var createBranch by remember { mutableStateOf(false) }
     var currentJob by remember { mutableStateOf<Job?>(null) }
     val isLoading = currentJob?.isActive == true
+    val focusManager = LocalFocusManager.current
 
     // Monitor job completion
     LaunchedEffect(currentJob) {
@@ -120,28 +127,52 @@ fun CompressContextDialog(
                     )
 
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val keepRecentMessagesLabel = stringResource(R.string.chat_page_compress_keep_recent)
+                        Text(
+                            text = keepRecentMessagesLabel,
+                            style = MaterialTheme.typography.titleSmallEmphasized,
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                text = stringResource(R.string.chat_page_compress_keep_recent),
-                                style = MaterialTheme.typography.titleSmall,
-                                modifier = Modifier.weight(1f),
-                            )
                             FilledTonalIconButton(
-                                onClick = { keepRecentMessages-- },
-                                enabled = keepRecentMessages > 0,
+                                onClick = {
+                                    keepRecentMessages?.let { keepRecentMessagesInput = (it - 1).toString() }
+                                },
+                                enabled = keepRecentMessages != null && keepRecentMessages > 0,
                             ) {
                                 Icon(HugeIcons.Remove01, contentDescription = "Decrease")
                             }
-                            Text(
-                                text = keepRecentMessages.toString(),
-                                style = MaterialTheme.typography.titleMediumEmphasized,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.widthIn(min = 40.dp),
+                            OutlinedTextField(
+                                value = keepRecentMessagesInput,
+                                onValueChange = { value ->
+                                    if (value.isEmpty() ||
+                                        (value.all { it in '0'..'9' } && value.toIntOrNull() != null)
+                                    ) {
+                                        keepRecentMessagesInput = value
+                                    }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .semantics { contentDescription = keepRecentMessagesLabel },
+                                textStyle = MaterialTheme.typography.titleMediumEmphasized.copy(
+                                    textAlign = TextAlign.Center,
+                                ),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done,
+                                ),
+                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                             )
-                            FilledTonalIconButton(onClick = { keepRecentMessages++ }) {
+                            FilledTonalIconButton(
+                                onClick = {
+                                    keepRecentMessages?.let { keepRecentMessagesInput = (it + 1).toString() }
+                                },
+                                enabled = keepRecentMessages != null && keepRecentMessages < Int.MAX_VALUE,
+                            ) {
                                 Icon(HugeIcons.Add01, contentDescription = "Increase")
                             }
                         }
@@ -163,9 +194,15 @@ fun CompressContextDialog(
                     Text(stringResource(R.string.cancel))
                 }
             } else {
-                TextButton(onClick = {
-                    currentJob = onConfirm(additionalPrompt, keepRecentMessages, createBranch)
-                }) {
+                TextButton(
+                    onClick = {
+                        keepRecentMessages?.let { count ->
+                            focusManager.clearFocus()
+                            currentJob = onConfirm(additionalPrompt, count, createBranch)
+                        }
+                    },
+                    enabled = keepRecentMessages != null,
+                ) {
                     Text(stringResource(R.string.confirm))
                 }
             }

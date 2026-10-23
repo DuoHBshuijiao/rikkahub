@@ -76,7 +76,7 @@ object SettingsJsonMigrator {
                 root["providers"] = JsonArray(providers.map(::migrateProviderQuotaQuery))
             }
 
-            JsonInstant.encodeToString(JsonObject(root))
+            JsonInstant.encodeToString(migrateUserPersonas(JsonObject(root)))
         }.onFailure {
             Log.e(TAG, "migrate: Failed to migrate settings JSON, using original", it)
         }.getOrDefault(settingsJson)

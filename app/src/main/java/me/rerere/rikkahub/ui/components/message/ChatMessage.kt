@@ -80,6 +80,8 @@ import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.UserPersona
+import me.rerere.rikkahub.data.model.getCurrentUserPersona
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.SearchJumpTarget
@@ -115,6 +117,7 @@ fun ChatMessage(
     loading: Boolean = false,
     model: Model? = null,
     assistant: Assistant? = null,
+    userPersona: UserPersona = LocalSettings.current.getCurrentUserPersona(),
     lastMessage: Boolean = false,
     firstMessage: Boolean = false,
     onFork: () -> Unit,
@@ -189,8 +192,8 @@ fun ChatMessage(
                 )
                 ChatMessageUserAvatar(
                     message = message,
-                    avatar = settings.userAvatar,
-                    nickname = settings.userNickname,
+                    avatar = userPersona.avatar,
+                    nickname = userPersona.nickname,
                     modifier = Modifier.weight(1f)
                 )
             }

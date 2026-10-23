@@ -39,6 +39,7 @@ import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV2Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV3Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV4Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV5Migration
+import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV6Migration
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.files.LocalFileReferences
 import java.io.File
@@ -80,6 +81,7 @@ private fun createSettingsDataStore(context: Context): DataStore<Preferences> {
             PreferenceStoreV3Migration(),
             PreferenceStoreV4Migration(),
             PreferenceStoreV5Migration(),
+            PreferenceStoreV6Migration(),
         ),
         produceFile = { file },
     )
@@ -106,6 +108,8 @@ class SettingsStore internal constructor(
         val THEME_ID = stringPreferencesKey("theme_id")
         val CUSTOM_THEMES = stringPreferencesKey("custom_themes")
         val DISPLAY_SETTING = stringPreferencesKey("display_setting")
+        val USER_PERSONAS = stringPreferencesKey("user_personas")
+        val SELECTED_USER_PERSONA = stringPreferencesKey("selected_user_persona")
         val NETWORK_SETTING = stringPreferencesKey("network_setting")
         val DEVELOPER_MODE = booleanPreferencesKey("developer_mode")
 
@@ -189,7 +193,7 @@ class SettingsStore internal constructor(
             context.settingsStore.edit { preferences ->
                 if (preferences[LOCAL_FILE_REFERENCE_ROOT] == root) return@edit
                 val references = LocalFileReferences(context.filesDir)
-                listOf(DISPLAY_SETTING, ASSISTANTS).forEach { key ->
+                listOf(DISPLAY_SETTING, ASSISTANTS, USER_PERSONAS).forEach { key ->
                     preferences[key]?.let { original ->
                         val updated = references.rebuildJson(original)
                         if (updated != original) preferences[key] = updated

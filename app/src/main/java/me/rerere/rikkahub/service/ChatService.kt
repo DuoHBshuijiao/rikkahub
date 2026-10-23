@@ -51,6 +51,7 @@ import me.rerere.rikkahub.data.ai.prompts.buildCompressPrompt
 import me.rerere.rikkahub.data.ai.tools.InvalidMcpServerNamesException
 import me.rerere.rikkahub.data.ai.tools.shouldUseExternalWebSearch
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
@@ -58,6 +59,12 @@ import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.ConversationCleanupOptions
+import me.rerere.rikkahub.data.model.UserPersona
+import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.model.DEFAULT_USER_PERSONA_ID
+import me.rerere.rikkahub.data.model.withoutUserPersona
+import me.rerere.rikkahub.data.model.getUserPersona
+import me.rerere.rikkahub.data.model.getUserPersonaOf
 import me.rerere.rikkahub.data.model.bindConfig
 import me.rerere.rikkahub.data.model.cancelInterruptedTools
 import me.rerere.rikkahub.data.model.deleteMessage
@@ -83,6 +90,7 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.web.BadRequestException
 import me.rerere.rikkahub.web.NotFoundException
+import me.rerere.rikkahub.utils.JsonInstant
 import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
@@ -917,6 +925,83 @@ class ChatService(
     }
 
     // ---- 聊天页配置 ----
+
+    /** Only the foreground chat page calls this; background/Web initialization must not change the selection. */
+    suspend fun syncCurrentUserPersona(conversationId: Uuid) {
+        withLoadedSession(conversationId) { session ->
+            settingsStore.update { settings ->
+                settings.copy(selectedUserPersonaId = settings.getUserPersonaOf(session.state.value).id)
+            }
+        }
+    }
+
+    suspend fun selectUserPersona(conversationId: Uuid, personaId: Uuid) {
+        withLoadedSession(conversationId) { session ->
+            settingsStore.update { settings ->
+                settings.copy(selectedUserPersonaId = settings.getUserPersona(personaId).id)
+            }
+            session.updateMetadata(
+                transform = { latest ->
+                    val id = settingsStore.settingsFlow.value.getUserPersona(personaId).id
+                    latest.copy(config = latest.config?.copy(userPersonaId = id))
+                },
+                persist = conversationRepo::updateConversationConfig,
+            )
+        }
+    }
+
+    suspend fun updateUserPersona(persona: UserPersona, create: Boolean = false) {
+        var previous: Settings? = null
+        settingsStore.update { settings ->
+            previous = settings
+            when {
+                settings.userPersonas.any { it.id == persona.id } -> settings.copy(
+                    userPersonas = settings.userPersonas.map { if (it.id == persona.id) persona else it },
+                )
+                create -> settings.copy(userPersonas = settings.userPersonas + persona)
+                else -> settings
+            }
+        }
+        previous?.let(::cleanupUserPersonaAvatars)
+    }
+
+    suspend fun deleteUserPersona(personaId: Uuid) {
+        if (personaId == DEFAULT_USER_PERSONA_ID) return
+        var previous: Settings? = null
+        settingsStore.update { settings ->
+            previous = settings
+            settings.withoutUserPersona(personaId)
+        }
+        previous?.let(::cleanupUserPersonaAvatars)
+    }
+
+    private fun cleanupUserPersonaAvatars(previous: Settings) {
+        val candidates = previous.userPersonas.mapNotNull { (it.avatar as? Avatar.Image)?.url }.toSet()
+        appScope.launch(Dispatchers.IO) {
+            try {
+                for (url in candidates) {
+                    if (!url.startsWith("file:")) continue
+                    if (conversationRepo.hasFileReference(url)) continue
+                    val sessions = sessionManager.snapshot()
+                    if (sessions.any { session ->
+                            url in session.state.value.localPersonaAttachmentReferences() ||
+                                (session.messageQueue.state.value.messages + listOfNotNull(session.submittingMessage))
+                                    .any { url in it.parts.localFileUrls() }
+                        }) continue
+                    // Check all settings resources, including avatars shared with assistants and legacy settings.
+                    if (JsonInstant.encodeToString(settingsStore.settingsFlow.value)
+                            .contains(JsonInstant.encodeToString(url))) continue
+                    filesManager.deleteChatFiles(listOf(url.toUri()))
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.w(TAG, "Could not verify persona avatar references; retaining files", e)
+            }
+        }
+    }
+
+    private fun Conversation.localPersonaAttachmentReferences(): Set<String> =
+        messageNodes.flatMap { it.messages }.flatMap { it.parts }.localFileUrls()
 
     /**
      * 聊天页对助手的修改：会话持有的字段只改当前会话，其余写回助手设置。

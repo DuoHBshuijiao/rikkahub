@@ -10,11 +10,8 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Assistant
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.get
+import me.rerere.rikkahub.data.model.UserPersona
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -24,7 +21,7 @@ import java.util.TimeZone
 
 data class PlaceholderCtx(
     val context: Context,
-    val settingsStore: SettingsStore,
+    val userPersona: UserPersona,
     val model: Model,
     val assistant: Assistant,
 )
@@ -91,7 +88,7 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
         }
 
         placeholder("nickname", { Text(stringResource(R.string.placeholder_nickname)) }) {
-            it.settingsStore.settingsFlow.value.displaySetting.userNickname.ifBlank { "user" }
+            it.userPersona.placeholderName
         }
 
         placeholder("char", { Text(stringResource(R.string.placeholder_char)) }) {
@@ -99,7 +96,7 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
         }
 
         placeholder("user", { Text(stringResource(R.string.placeholder_user)) }) {
-            it.settingsStore.settingsFlow.value.displaySetting.userNickname.ifBlank { "user" }
+            it.userPersona.placeholderName
         }
     }
 
@@ -114,20 +111,19 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
     }
 }
 
-object PlaceholderTransformer : InputMessageTransformer, KoinComponent {
+object PlaceholderTransformer : InputMessageTransformer {
     private val defaultProvider = DefaultPlaceholderProvider
 
     override suspend fun transform(
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        val settingsStore = get<SettingsStore>()
         return messages.map {
             it.copy(
                 parts = it.parts.map { part ->
                     if (part is UIMessagePart.Text) {
                         part.copy(
-                            text = replacePlaceholders(text = part.text, ctx = ctx, settingsStore = settingsStore)
+                            text = replacePlaceholders(text = part.text, ctx = ctx)
                         )
                     } else {
                         part
@@ -137,16 +133,15 @@ object PlaceholderTransformer : InputMessageTransformer, KoinComponent {
         }
     }
 
-    private fun replacePlaceholders(
+    internal fun replacePlaceholders(
         text: String,
         ctx: TransformerContext,
-        settingsStore: SettingsStore
     ): String {
         var result = text
 
         val ctx = PlaceholderCtx(
             context = ctx.context,
-            settingsStore = settingsStore,
+            userPersona = ctx.userPersona,
             model = ctx.model,
             assistant = ctx.assistant
         )

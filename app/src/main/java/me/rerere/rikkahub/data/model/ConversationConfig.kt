@@ -19,6 +19,7 @@ import kotlin.uuid.Uuid
  */
 @Serializable
 data class ConversationConfig(
+    val userPersonaId: Uuid = DEFAULT_USER_PERSONA_ID,
     val chatModelId: Uuid? = null,
     val reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
     val enableWebSearch: Boolean = false,
@@ -65,6 +66,7 @@ fun Conversation.withAssistantUpdate(updated: Assistant, settings: Settings): Co
     } else {
         copy(
             config = updated.toConversationConfig().copy(
+                userPersonaId = config.userPersonaId,
                 builtInSearch = if (updated.chatModelId == config.chatModelId) {
                     config.builtInSearch
                 } else {
@@ -128,12 +130,21 @@ fun Conversation.bindConfig(settings: Settings): Conversation {
     val builtInSearch = model != null && BuiltInTools.Search in model.tools
     val config = config
     if (config != null) {
-        if (model == null || model.id == config.chatModelId) return this
-        return copy(config = config.copy(chatModelId = model.id, builtInSearch = builtInSearch))
+        val userPersonaId = settings.getUserPersona(config.userPersonaId).id
+        val updated = if (model == null || model.id == config.chatModelId) {
+            config.copy(userPersonaId = userPersonaId)
+        } else {
+            config.copy(userPersonaId = userPersonaId, chatModelId = model.id, builtInSearch = builtInSearch)
+        }
+        return if (updated == config) this else copy(config = updated)
     }
     val assistant = settings.getAssistantOf(this)
     return copy(
-        config = assistant.toConversationConfig().copy(chatModelId = model?.id, builtInSearch = builtInSearch),
+        config = assistant.toConversationConfig().copy(
+            userPersonaId = if (newConversation) settings.getCurrentUserPersona().id else DEFAULT_USER_PERSONA_ID,
+            chatModelId = model?.id,
+            builtInSearch = builtInSearch,
+        ),
         // 旧版本允许会话单独绑定注入，这类会话保留自己的绑定
         modeInjectionIds = modeInjectionIds.ifEmpty { assistant.modeInjectionIds },
         lorebookIds = lorebookIds.ifEmpty { assistant.lorebookIds },

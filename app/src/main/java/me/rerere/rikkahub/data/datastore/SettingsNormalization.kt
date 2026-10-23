@@ -1,8 +1,10 @@
 package me.rerere.rikkahub.data.datastore
 
+import me.rerere.rikkahub.data.model.withUserPersonaDefaults
+
 /** 读盘后和每次修改后都要过一遍，保证内存里的设置始终是规整的。 */
 internal fun Settings.normalized(): Settings =
-    withBuiltInDefaults().withoutInvalidReferences().withValuesInRange()
+    withBuiltInDefaults().withUserPersonaDefaults().withoutInvalidReferences().withValuesInRange()
 
 // 补齐缺失的内置提供商/助手/TTS，内置提供商的描述信息始终以代码里的为准
 internal fun Settings.withBuiltInDefaults(): Settings {

@@ -9,7 +9,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.analytics.FirebaseAnalytics
@@ -35,10 +34,9 @@ import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
-import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.model.UserPersona
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.ConversationCleanupOptions
 import me.rerere.rikkahub.data.model.MessageNode
@@ -70,7 +68,6 @@ class ChatVM(
     private val chatService: ChatService,
     val updateChecker: UpdateChecker,
     private val analytics: FirebaseAnalytics,
-    private val filesManager: FilesManager,
     private val favoriteRepository: FavoriteRepository,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
@@ -171,29 +168,21 @@ class ChatVM(
 
     // 更新设置
     fun updateSettings(fn: (Settings) -> Settings): Job {
-        return viewModelScope.launch {
-            var oldSettings: Settings? = null
-            var newSettings: Settings? = null
-            settingsStore.update { old ->
-                fn(old).also { new ->
-                    oldSettings = old
-                    newSettings = new
-                }
-            }
-            // 检查用户头像是否有变化，如果有则删除旧头像
-            checkUserAvatarDelete(oldSettings ?: return@launch, newSettings ?: return@launch)
-        }
+        return viewModelScope.launch { settingsStore.update(fn) }
     }
 
-    // 检查用户头像删除
-    private fun checkUserAvatarDelete(oldSettings: Settings, newSettings: Settings) {
-        val oldAvatar = oldSettings.displaySetting.userAvatar
-        val newAvatar = newSettings.displaySetting.userAvatar
+    suspend fun syncCurrentUserPersona() = chatService.syncCurrentUserPersona(_conversationId)
 
-        if (oldAvatar is Avatar.Image && oldAvatar != newAvatar) {
-            filesManager.deleteChatFiles(listOf(oldAvatar.url.toUri()))
-        }
+    fun selectUserPersona(id: Uuid): Job = viewModelScope.launch {
+        chatService.selectUserPersona(_conversationId, id)
     }
+
+    fun updateUserPersona(persona: UserPersona, create: Boolean = false): Job = viewModelScope.launch {
+        chatService.updateUserPersona(persona, create)
+        if (create) chatService.selectUserPersona(_conversationId, persona.id)
+    }
+
+    fun deleteUserPersona(id: Uuid): Job = viewModelScope.launch { chatService.deleteUserPersona(id) }
 
     // 聊天页对助手的修改：新会话直接改助手，会话开始后只改当前会话
     fun updateAssistant(assistant: Assistant) {

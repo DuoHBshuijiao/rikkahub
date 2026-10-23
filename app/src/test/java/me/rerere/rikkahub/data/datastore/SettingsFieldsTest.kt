@@ -14,6 +14,7 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.Tag
+import me.rerere.rikkahub.data.model.UserPersona
 import me.rerere.rikkahub.data.sync.s3.S3Config
 import me.rerere.rikkahub.ui.theme.CustomTheme
 import me.rerere.search.SearchCommonOptions
@@ -116,6 +117,8 @@ private val SAMPLE = Settings(
     customThemes = listOf(CustomTheme(id = "theme", name = "Theme")),
     developerMode = true,
     displaySetting = DisplaySetting(userNickname = "me"),
+    userPersonas = listOf(UserPersona(id = id(40), nickname = "Persona")),
+    selectedUserPersonaId = id(40),
     networkSetting = NetworkSetting(userAgent = "agent"),
     favoriteModels = listOf(id(30)),
     chatModelId = id(1),
@@ -165,6 +168,8 @@ private val SAMPLE = Settings(
 )
 
 private val STORED_KEYS = setOf(
+    "user_personas",
+    "selected_user_persona",
     "dynamic_color",
     "theme_id",
     "custom_themes",
