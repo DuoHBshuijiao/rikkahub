@@ -2,6 +2,7 @@ package me.rerere.workspace
 
 import com.sun.net.httpserver.HttpServer
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -88,6 +89,7 @@ class ExampleUnitTest {
 
     @Test
     fun commandRunsInsideWorkspaceFilesDirectory() {
+        assumeTrue("Requires a POSIX host shell", File("/bin/sh").canExecute())
         val baseDir = Files.createTempDirectory("workspace-command-test").toFile()
         val manager = WorkspaceManager(baseDir)
         val root = "test-workspace"
@@ -102,6 +104,7 @@ class ExampleUnitTest {
 
     @Test
     fun commandReceivesStdin() {
+        assumeTrue("Requires a POSIX host shell", File("/bin/sh").canExecute())
         val baseDir = Files.createTempDirectory("workspace-stdin-test").toFile()
         val manager = WorkspaceManager(baseDir)
         val root = "test-workspace"
@@ -119,6 +122,7 @@ class ExampleUnitTest {
 
     @Test
     fun commandWithoutStdinGetsImmediateEof() {
+        assumeTrue("Requires a POSIX host shell", File("/bin/sh").canExecute())
         val baseDir = Files.createTempDirectory("workspace-stdin-eof-test").toFile()
         val manager = WorkspaceManager(baseDir)
         val root = "test-workspace"
@@ -154,6 +158,7 @@ class ExampleUnitTest {
 
     @Test
     fun commandOutputIsTruncatedAtLimit() {
+        assumeTrue("Requires a POSIX host shell", File("/bin/sh").canExecute())
         val baseDir = Files.createTempDirectory("workspace-truncate-test").toFile()
         val manager = WorkspaceManager(baseDir)
         val root = "test-workspace"

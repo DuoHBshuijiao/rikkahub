@@ -22,7 +22,9 @@ internal fun Settings.withBuiltInDefaults(): Settings {
                 description = defaultProvider.description,
                 shortDescription = defaultProvider.shortDescription,
             )
-        } else provider
+        } else {
+            provider
+        }
     }.toMutableList()
     val assistants = this.assistants.ifEmpty { DEFAULT_ASSISTANTS }.toMutableList()
     DEFAULT_ASSISTANTS.forEach { defaultAssistant ->

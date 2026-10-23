@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.data.datastore
 
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.CompletableDeferred
@@ -276,7 +275,7 @@ class SettingsStoreTest {
 
 private class OpenedStore(file: File, loadGate: CompletableDeferred<Unit>?) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    val disk = GatedDataStore(PreferenceDataStoreFactory.create(scope = scope) { file }, loadGate)
+    val disk = GatedDataStore(createTestPreferencesDataStore(file, scope), loadGate)
     val store = SettingsStore(disk, scope)
 
     suspend fun close() = scope.coroutineContext.job.cancelAndJoin()

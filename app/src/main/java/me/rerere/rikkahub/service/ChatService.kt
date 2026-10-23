@@ -50,21 +50,18 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.prompts.buildCompressPrompt
 import me.rerere.rikkahub.data.ai.tools.InvalidMcpServerNamesException
 import me.rerere.rikkahub.data.ai.tools.shouldUseExternalWebSearch
-import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.ConversationCleanupOptions
-import me.rerere.rikkahub.data.model.UserPersona
-import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.DEFAULT_USER_PERSONA_ID
-import me.rerere.rikkahub.data.model.withoutUserPersona
-import me.rerere.rikkahub.data.model.getUserPersona
-import me.rerere.rikkahub.data.model.getUserPersonaOf
+import me.rerere.rikkahub.data.model.UserPersona
 import me.rerere.rikkahub.data.model.bindConfig
 import me.rerere.rikkahub.data.model.cancelInterruptedTools
 import me.rerere.rikkahub.data.model.deleteMessage
@@ -74,6 +71,8 @@ import me.rerere.rikkahub.data.model.fork
 import me.rerere.rikkahub.data.model.getAssistantOf
 import me.rerere.rikkahub.data.model.getChatModelOf
 import me.rerere.rikkahub.data.model.getStoredAssistantOf
+import me.rerere.rikkahub.data.model.getUserPersona
+import me.rerere.rikkahub.data.model.getUserPersonaOf
 import me.rerere.rikkahub.data.model.isAwaitingToolApproval
 import me.rerere.rikkahub.data.model.localFileUrls
 import me.rerere.rikkahub.data.model.replaceCompressedHistory
@@ -86,11 +85,12 @@ import me.rerere.rikkahub.data.model.withToolApproval
 import me.rerere.rikkahub.data.model.withTranslation
 import me.rerere.rikkahub.data.model.withoutConversationFields
 import me.rerere.rikkahub.data.model.withoutUnresumableToolCalls
+import me.rerere.rikkahub.data.model.withoutUserPersona
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
+import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.web.BadRequestException
 import me.rerere.rikkahub.web.NotFoundException
-import me.rerere.rikkahub.utils.JsonInstant
 import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
@@ -987,10 +987,14 @@ class ChatService(
                             url in session.state.value.localPersonaAttachmentReferences() ||
                                 (session.messageQueue.state.value.messages + listOfNotNull(session.submittingMessage))
                                     .any { url in it.parts.localFileUrls() }
-                        }) continue
+                        }) {
+                        continue
+                    }
                     // Check all settings resources, including avatars shared with assistants and legacy settings.
                     if (JsonInstant.encodeToString(settingsStore.settingsFlow.value)
-                            .contains(JsonInstant.encodeToString(url))) continue
+                            .contains(JsonInstant.encodeToString(url))) {
+                        continue
+                    }
                     filesManager.deleteChatFiles(listOf(url.toUri()))
                 }
             } catch (e: Exception) {

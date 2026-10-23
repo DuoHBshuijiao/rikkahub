@@ -755,8 +755,6 @@ sealed interface Screen : NavKey {
     data class SettingMcpDetail(val serverId: String) : Screen
 
     @Serializable
-
-    @Serializable
     data object SettingFiles : Screen
 
     @Serializable

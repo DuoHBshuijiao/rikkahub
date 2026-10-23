@@ -53,7 +53,9 @@ class PreferenceStoreV6MigrationTest {
         assertEquals(personas, migrated.userPersonas)
         assertEquals(persona.id, migrated.selectedUserPersonaId)
         val backup = Settings(userPersonas = personas, selectedUserPersonaId = persona.id, displaySetting = display)
-        val restored = JsonInstant.decodeFromString<Settings>(SettingsJsonMigrator.migrate(JsonInstant.encodeToString(backup)))
+        val restored = JsonInstant.decodeFromString<Settings>(
+            SettingsJsonMigrator.migrate(JsonInstant.encodeToString(backup))
+        )
         assertEquals(personas, restored.userPersonas)
         assertEquals(persona.id, restored.selectedUserPersonaId)
     }

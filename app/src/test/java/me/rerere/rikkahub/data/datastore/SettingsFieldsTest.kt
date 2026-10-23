@@ -19,6 +19,7 @@ import me.rerere.rikkahub.data.sync.s3.S3Config
 import me.rerere.rikkahub.ui.theme.CustomTheme
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchServiceOptions
+import me.rerere.tts.provider.TTSProviderSetting
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
@@ -150,7 +151,7 @@ private val SAMPLE = Settings(
     s3Config = S3Config(bucket = "backup"),
     uploadS3Config = S3Config(bucket = "upload"),
     mediaGenerationProviders = listOf(MediaGenerationProviderSetting.OpenAI(id = id(9))),
-    ttsProviders = DEFAULT_TTS_PROVIDERS.take(1),
+    ttsProviders = listOf(TTSProviderSetting.OpenAI(id = id(10), name = "Voice")),
     selectedTTSProviderId = id(10),
     defaultTTSPlaybackSpeed = 1.5f,
     asrProviders = listOf(ASRProviderSetting.OpenAIRealtime(id = id(11))),

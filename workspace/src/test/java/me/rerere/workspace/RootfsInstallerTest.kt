@@ -3,6 +3,7 @@ package me.rerere.workspace
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -53,6 +54,7 @@ class RootfsInstallerTest {
 
     @Test
     fun `extract handles alpine style rootfs`() {
+        assumeTrue("Requires POSIX absolute symlink targets", File.separatorChar == '/')
         // Alpine minirootfs 以根目录条目 "./" 开头, 且 /bin/sh 是指向 /bin/busybox 的绝对路径软链
         val archive = tmp.newFile("rootfs.tar.gz")
         GZIPOutputStream(archive.outputStream()).use { out ->

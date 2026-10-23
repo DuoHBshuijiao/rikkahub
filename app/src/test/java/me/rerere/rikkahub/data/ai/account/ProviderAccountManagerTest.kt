@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.ai.account
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,6 +16,7 @@ import me.rerere.ai.provider.OAuthCredential
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.createTestPreferencesDataStore
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -81,7 +81,7 @@ class ProviderAccountManagerTest {
 
     private suspend fun createStore(): SettingsStore {
         val store = SettingsStore(
-            PreferenceDataStoreFactory.create(scope = storeScope) { File(temp.root, "settings.preferences_pb") },
+            createTestPreferencesDataStore(File(temp.root, "settings.preferences_pb"), storeScope),
             storeScope,
         )
         store.awaitLoaded()

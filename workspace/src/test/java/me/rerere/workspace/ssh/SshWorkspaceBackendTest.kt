@@ -23,7 +23,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
+import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -594,6 +596,16 @@ class SshWorkspaceBackendTest {
     }
 
     private companion object {
+        @BeforeClass
+        @JvmStatic
+        fun requirePosixHost() {
+            assumeTrue("Embedded SSH server requires POSIX paths and tools", File.separatorChar == '/')
+            assumeTrue(
+                "Embedded SSH server requires /bin/sh and /usr/bin/env",
+                File("/bin/sh").canExecute() && File("/usr/bin/env").canExecute()
+            )
+        }
+
         const val SLOW_REPLY_MARKER = "rikkahub-slow-reply"
         const val SLOW_READ_FILE = "slow.txt"
         const val WORKSPACE_ID = "test"
