@@ -15,6 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.core.Tool
+import me.rerere.ai.interaction.AskUserProtocol
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
@@ -33,6 +34,32 @@ import org.junit.Test
 import java.io.IOException
 
 class AgentLoopTest {
+    @Test
+    fun `malformed questions return an error before approval and the model can repair them`() = runTest {
+        val ask = tool("ask_user", needsApproval = true) { error("must not execute") }
+            .copy(validateInput = AskUserProtocol::inputError)
+        provider.stream {
+            toolCall("bad", "ask_user", """{"questions":[{"question":"语言？","options":[{"label":"Kotlin"}]}]}""")
+            finish()
+        }
+        provider.stream {
+            toolCall(
+                "fixed",
+                "ask_user",
+                """{"questions":[{"id":"q","question":"语言？","selection_type":"single","options":["Kotlin"]}]}"""
+            )
+            finish()
+        }
+        val finished = runToEnd(request(tools = listOf(ask))).finished()
+        assertEquals(AgentFinishReason.AwaitingApproval(setOf("fixed")), finished.reason)
+        val bad = finished.message.tool("bad")
+        assertTrue(bad.isExecuted)
+        assertFalse(bad.isPending)
+        assertTrue(bad.outputText().contains("$.questions[0].options[0]"))
+        assertTrue(bad.outputText().contains("invalid_tool_arguments"))
+        assertNull(bad.startedAt)
+        assertEquals(2, provider.requests.size)
+    }
     private val model = Model(modelId = "test-model")
     private val provider = FakeProvider()
     private val hooks = RecordingHooks(model)

@@ -1,3 +1,4 @@
+import { AskUserToolStep } from "./ask-user-part";
 import * as React from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -14,7 +15,6 @@ import {
   Loader2,
   MessageCircleQuestion,
   Search,
-  Send,
   Video,
   Wrench,
   X,
@@ -22,7 +22,6 @@ import {
 
 import Markdown from "~/components/markdown/markdown";
 import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
 import {
   Drawer,
   DrawerContent,
@@ -32,10 +31,7 @@ import {
 } from "~/components/ui/drawer";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { resolveFileUrl } from "~/lib/files";
-import type {
-  TextPart as UITextPart,
-  ToolPart as UIToolPart,
-} from "~/types";
+import type { TextPart as UITextPart, ToolPart as UIToolPart } from "~/types";
 
 import { ControlledChainOfThoughtStep } from "../chain-of-thought";
 import { AudioPart as AudioPartRenderer } from "./audio-part";
@@ -45,7 +41,12 @@ import { VideoPart as VideoPartRenderer } from "./video-part";
 interface ToolPartProps {
   tool: UIToolPart;
   loading?: boolean;
-  onToolApproval?: (toolCallId: string, approved: boolean, reason: string, answer?: string) => void | Promise<void>;
+  onToolApproval?: (
+    toolCallId: string,
+    approved: boolean,
+    reason: string,
+    answer?: string,
+  ) => void | Promise<void>;
   isFirst?: boolean;
   isLast?: boolean;
 }
@@ -249,192 +250,6 @@ function ScrapeWebPreview({ content }: { content: unknown }) {
         );
       })}
     </div>
-  );
-}
-
-interface AskUserQuestion {
-  id: string;
-  question: string;
-  options: string[];
-  selectionType: "text" | "single" | "multi";
-}
-
-function parseAskUserQuestions(args: unknown): AskUserQuestion[] {
-  try {
-    const questions = getArrayField(args, "questions");
-    return questions
-      .map((q) => {
-        if (!q || typeof q !== "object" || Array.isArray(q)) return null;
-        const record = q as Record<string, unknown>;
-        const id = typeof record.id === "string" ? record.id : "";
-        const question = typeof record.question === "string" ? record.question : "";
-        if (!id || !question) return null;
-        const rawOptions = Array.isArray(record.options) ? record.options : [];
-        const options = rawOptions.filter((o): o is string => typeof o === "string");
-        const selectionType: AskUserQuestion["selectionType"] =
-          record.selection_type === "single" || record.selection_type === "multi"
-            ? record.selection_type
-            : "text";
-        return { id, question, options, selectionType } satisfies AskUserQuestion;
-      })
-      .filter((q): q is AskUserQuestion => q !== null);
-  } catch {
-    return [];
-  }
-}
-
-function AskUserToolStep({
-  tool,
-  loading,
-  onToolApproval,
-  isFirst,
-  isLast,
-}: ToolPartProps) {
-  const { t } = useTranslation("message");
-  const [expanded, setExpanded] = React.useState(true);
-
-  const args = React.useMemo(() => safeJsonParse(tool.input), [tool.input]);
-  const questions = React.useMemo(() => parseAskUserQuestions(args), [args]);
-  const [answers, setAnswers] = React.useState<Record<string, string>>({});
-  const [multiAnswers, setMultiAnswers] = React.useState<Record<string, string[]>>({});
-
-  const isPending = tool.output.length === 0 && tool.approvalState.type === "pending";
-  const isAnswered = tool.approvalState.type === "answered";
-
-  const firstQuestion = questions[0]?.question ?? "...";
-  const title =
-    questions.length <= 1
-      ? firstQuestion
-      : t("tool_part.ask_user_questions_count", { count: questions.length });
-
-  const getAnswer = (q: AskUserQuestion): string => {
-    const text = answers[q.id] ?? "";
-    return q.selectionType === "multi"
-      ? [...(multiAnswers[q.id] ?? []), ...(text.trim() ? [text] : [])].join(", ")
-      : text;
-  };
-  const allAnswered = questions.length > 0 && questions.every((q) => getAnswer(q).trim());
-
-  const handleSubmit = () => {
-    if (!onToolApproval || !allAnswered) return;
-    const payload = JSON.stringify({
-      answers: Object.fromEntries(questions.map((q) => [q.id, getAnswer(q)])),
-    });
-    void onToolApproval(tool.toolCallId, true, "", payload);
-  };
-
-  const setAnswer = (questionId: string, value: string) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: value }));
-  };
-
-  const toggleOption = (questionId: string, option: string) => {
-    setMultiAnswers((prev) => {
-      const selected = prev[questionId] ?? [];
-      return {
-        ...prev,
-        [questionId]: selected.includes(option)
-          ? selected.filter((value) => value !== option)
-          : [...selected, option],
-      };
-    });
-  };
-
-  // Parse answered state for display
-  const answeredValues = React.useMemo(() => {
-    if (tool.approvalState.type !== "answered") return {};
-    try {
-      const parsed = JSON.parse(tool.approvalState.answer) as { answers?: Record<string, string> };
-      return parsed.answers ?? {};
-    } catch {
-      return {};
-    }
-  }, [tool.approvalState]);
-
-  return (
-    <ControlledChainOfThoughtStep
-      expanded={expanded}
-      onExpandedChange={setExpanded}
-      isFirst={isFirst}
-      isLast={isLast}
-      icon={
-        loading ? (
-          <Loader2 className="h-4 w-4 animate-spin text-primary" />
-        ) : (
-          <MessageCircleQuestion className="h-4 w-4 text-primary" />
-        )
-      }
-      label={<span className="text-foreground line-clamp-2 text-sm font-medium">{title}</span>}
-    >
-      <div className="space-y-3 w-full">
-        {questions.map((q) => (
-          <div key={q.id} className="space-y-1.5">
-            {questions.length > 1 && (
-              <div className="text-sm text-foreground">{q.question}</div>
-            )}
-
-            {isPending && onToolApproval ? (
-              <>
-                {q.options.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {q.options.map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        aria-pressed={q.selectionType === "multi"
-                          ? (multiAnswers[q.id] ?? []).includes(option)
-                          : answers[q.id] === option}
-                        onClick={() => q.selectionType === "multi"
-                          ? toggleOption(q.id, option)
-                          : setAnswer(q.id, option)}
-                        className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                          (q.selectionType === "multi"
-                            ? (multiAnswers[q.id] ?? []).includes(option)
-                            : answers[q.id] === option)
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-muted-foreground/30 text-muted-foreground hover:border-primary/50"
-                        }`}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <Input
-                  value={answers[q.id] ?? ""}
-                  onChange={(e) => setAnswer(q.id, e.target.value)}
-                  placeholder={q.question}
-                  className="text-sm"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && allAnswered) {
-                      e.preventDefault();
-                      handleSubmit();
-                    }
-                  }}
-                />
-              </>
-            ) : isAnswered ? (
-              <div className="text-sm text-primary">
-                {answeredValues[q.id] ?? tool.approvalState.type === "answered" ? answeredValues[q.id] || "" : ""}
-              </div>
-            ) : null}
-          </div>
-        ))}
-
-        {isPending && onToolApproval && (
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={!allAnswered}
-              onClick={handleSubmit}
-            >
-              <Send className="mr-1.5 h-3.5 w-3.5" />
-              {t("tool_part.ask_user_submit")}
-            </Button>
-          </div>
-        )}
-      </div>
-    </ControlledChainOfThoughtStep>
   );
 }
 
@@ -656,9 +471,12 @@ export function ToolPart({
                         }
                         return <JsonBlock key={i} value={parsed} />;
                       }
-                      if (part.type === "image") return <ImagePartRenderer key={i} url={part.url} />;
-                      if (part.type === "video") return <VideoPartRenderer key={i} url={part.url} />;
-                      if (part.type === "audio") return <AudioPartRenderer key={i} url={part.url} />;
+                      if (part.type === "image")
+                        return <ImagePartRenderer key={i} url={part.url} />;
+                      if (part.type === "video")
+                        return <VideoPartRenderer key={i} url={part.url} />;
+                      if (part.type === "audio")
+                        return <AudioPartRenderer key={i} url={part.url} />;
                       return null;
                     })}
                   </div>

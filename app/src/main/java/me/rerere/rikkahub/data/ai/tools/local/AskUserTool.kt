@@ -6,6 +6,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
+import me.rerere.ai.interaction.AskUserProtocol
 
 const val ASK_USER_TOOL_NAME = "ask_user"
 
@@ -13,19 +14,22 @@ internal fun buildAskUserTool(): Tool = Tool(
     name = ASK_USER_TOOL_NAME,
     description = """
         Ask the user one or more questions when you need clarification, additional information, or confirmation.
-        Each question can optionally provide a list of suggested options for the user to choose from.
-        The user may provide a free-text answer for every question, including single and multi selection questions.
-        For multi selection questions, custom text can be combined with selected options.
-        The answers will be returned as a JSON object mapping question IDs to the user's responses.
+        Use single to request one answer or multi to allow several answers. Supply suggested options as strings;
+        use an empty options array when no suggestions are useful. Every option is editable and the user can
+        always add custom answers, so do not add an Other option or any custom-input configuration.
+        Answers contain version 2 and an answers object mapping question IDs to arrays of selected options.
+        Each selected option's text is the user's final answer, which may differ from original_text.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
                 put("questions", buildJsonObject {
                     put("type", "array")
+                    put("minItems", 1)
                     put("description", "List of questions to ask the user")
                     put("items", buildJsonObject {
                         put("type", "object")
+                        put("additionalProperties", false)
                         put("properties", buildJsonObject {
                             put("id", buildJsonObject {
                                 put("type", "string")
@@ -39,7 +43,7 @@ internal fun buildAskUserTool(): Tool = Tool(
                                 put("type", "array")
                                 put(
                                     "description",
-                                    "Optional list of suggested options for the user to choose from"
+                                    "Suggested answers. Every option can be edited; custom input is always available. Use [] for free input."
                                 )
                                 put("items", buildJsonObject {
                                     put("type", "string")
@@ -50,20 +54,21 @@ internal fun buildAskUserTool(): Tool = Tool(
                                 put(
                                     "enum",
                                     buildJsonArray {
-                                        add("text")
                                         add("single")
                                         add("multi")
                                     }
                                 )
                                 put(
                                     "description",
-                                    "Answer type: text (free text input, default), single (select one option or enter custom text), multi (select options and/or enter custom text)"
+                                    "single: one answer; multi: one or more answers. All options are editable and custom answers are always supported."
                                 )
                             })
                         })
                         put("required", buildJsonArray {
                             add("id")
                             add("question")
+                            add("selection_type")
+                            add("options")
                         })
                     })
                 })
@@ -72,6 +77,7 @@ internal fun buildAskUserTool(): Tool = Tool(
         )
     },
     needsApproval = { true },
+    validateInput = AskUserProtocol::inputError,
     execute = {
         error("ask_user tool should be handled by HITL flow")
     }

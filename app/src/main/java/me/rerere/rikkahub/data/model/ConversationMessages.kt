@@ -1,9 +1,11 @@
 package me.rerere.rikkahub.data.model
 
+import me.rerere.ai.interaction.AskUserProtocol
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.finishPendingTools
+import me.rerere.rikkahub.data.ai.tools.local.ASK_USER_TOOL_NAME
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
@@ -69,10 +71,10 @@ internal fun Conversation.withNodeFavorite(nodeId: Uuid, favorite: Boolean): Con
  * 当前分支里没有这个还在等待审批的工具调用时返回 null，用来忽略重复点击和对已完成或非当前分支工具的过期审批。
  */
 internal fun Conversation.withToolApproval(toolCallId: String, approvalState: ToolApprovalState): Conversation? {
-    if (currentMessages.none { message ->
-            message.getTools().any { it.toolCallId == toolCallId && it.isPending }
-        }) {
-        return null
+    val pending = currentMessages.flatMap { it.getTools() }
+        .firstOrNull { it.toolCallId == toolCallId && it.isPending } ?: return null
+    if (pending.toolName == ASK_USER_TOOL_NAME && approvalState is ToolApprovalState.Answered) {
+        AskUserProtocol.validateAnswer(AskUserProtocol.parse(pending.input), approvalState.answer)
     }
     return copy(
         messageNodes = messageNodes.map { node ->

@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import androidx.compose.runtime.CompositionLocalProvider
+import me.rerere.rikkahub.ui.components.message.LocalAskUserDraftStore
+
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -222,72 +225,74 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, se
         }
     }
 
-    when {
-        isBigScreen -> {
-            PermanentNavigationDrawer(
-                drawerContent = {
-                    ChatDrawerContent(
+    CompositionLocalProvider(LocalAskUserDraftStore provides vm.askUserDraftStore) {
+        when {
+            isBigScreen -> {
+                PermanentNavigationDrawer(
+                    drawerContent = {
+                        ChatDrawerContent(
+                            navController = navController,
+                            current = conversation,
+                            vm = vm,
+                            settings = setting
+                        )
+                    }
+                ) {
+                    ChatPageContent(
+                        onStartVoiceMode = startVoiceMode,
+                        inputState = inputState,
+                        loadingJob = loadingJob,
+                        processingStatus = processingStatus,
+                        setting = setting,
+                        conversation = conversation,
+                        drawerState = drawerState,
                         navController = navController,
-                        current = conversation,
                         vm = vm,
-                        settings = setting
+                        chatListState = chatListState,
+                        assistant = assistant,
+                        currentChatModel = currentChatModel,
+                        bigScreen = true,
+                        errors = errors,
+                        onDismissError = { vm.dismissError(it) },
+                        onClearAllErrors = { vm.clearAllErrors() },
                     )
                 }
-            ) {
-                ChatPageContent(
-                    onStartVoiceMode = startVoiceMode,
-                    inputState = inputState,
-                    loadingJob = loadingJob,
-                    processingStatus = processingStatus,
-                    setting = setting,
-                    conversation = conversation,
-                    drawerState = drawerState,
-                    navController = navController,
-                    vm = vm,
-                    chatListState = chatListState,
-                    assistant = assistant,
-                    currentChatModel = currentChatModel,
-                    bigScreen = true,
-                    errors = errors,
-                    onDismissError = { vm.dismissError(it) },
-                    onClearAllErrors = { vm.clearAllErrors() },
-                )
             }
-        }
 
-        else -> {
-            ModalNavigationDrawer(
-                drawerState = drawerState,
-                drawerContent = {
-                    ChatDrawerContent(
+            else -> {
+                ModalNavigationDrawer(
+                    drawerState = drawerState,
+                    drawerContent = {
+                        ChatDrawerContent(
+                            navController = navController,
+                            current = conversation,
+                            vm = vm,
+                            settings = setting
+                        )
+                    }
+                ) {
+                    ChatPageContent(
+                        onStartVoiceMode = startVoiceMode,
+                        inputState = inputState,
+                        loadingJob = loadingJob,
+                        processingStatus = processingStatus,
+                        setting = setting,
+                        conversation = conversation,
+                        drawerState = drawerState,
                         navController = navController,
-                        current = conversation,
                         vm = vm,
-                        settings = setting
+                        chatListState = chatListState,
+                        assistant = assistant,
+                        currentChatModel = currentChatModel,
+                        bigScreen = false,
+                        errors = errors,
+                        onDismissError = { vm.dismissError(it) },
+                        onClearAllErrors = { vm.clearAllErrors() },
                     )
                 }
-            ) {
-                ChatPageContent(
-                    onStartVoiceMode = startVoiceMode,
-                    inputState = inputState,
-                    loadingJob = loadingJob,
-                    processingStatus = processingStatus,
-                    setting = setting,
-                    conversation = conversation,
-                    drawerState = drawerState,
-                    navController = navController,
-                    vm = vm,
-                    chatListState = chatListState,
-                    assistant = assistant,
-                    currentChatModel = currentChatModel,
-                    bigScreen = false,
-                    errors = errors,
-                    onDismissError = { vm.dismissError(it) },
-                    onClearAllErrors = { vm.clearAllErrors() },
-                )
-            }
-            BackHandler(drawerState.isOpen) {
-                scope.launch { drawerState.close() }
+                BackHandler(drawerState.isOpen) {
+                    scope.launch { drawerState.close() }
+                }
             }
         }
     }

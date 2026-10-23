@@ -1,0 +1,24 @@
+{
+  "valid": [
+    {"input":{"questions":[{"id":"a","question":"语言？","selection_type":"single","options":["Kotlin","Java"]}]},"expected":[{"id":"a","question":"语言？","selection":"single","options":["Kotlin","Java"]}]},
+    {"input":{"questions":[{"id":"a","question":"平台？","selection_type":"multi","options":["Android","Web"]}]},"expected":[{"id":"a","question":"平台？","selection":"multi","options":["Android","Web"]}]},
+    {"input":{"questions":[{"question":"补充说明？"}]},"expected":[{"id":"q_1","question":"补充说明？","selection":"single","options":[]}]},
+    {"input":{"questions":[{"id":"a","question":"旧题型","selection_type":"text","options":null}]},"expected":[{"id":"a","question":"旧题型","selection":"single","options":[]}]},
+    {"input":{"questions":[{"id":"a","question":"自由输入","selection_type":"single","options":[]}]},"expected":[{"id":"a","question":"自由输入","selection":"single","options":[]}]},
+    {"input":{"questions":[{"id":"a","question":"同名选项","options":["A","A"]}]},"expected":[{"id":"a","question":"同名选项","selection":"single","options":["A","A"]}]}
+  ],
+  "invalid": [
+    {"input":{},"path":"$.questions"},
+    {"input":{"questions":[]},"path":"$.questions"},
+    {"input":{"questions":[null]},"path":"$.questions[0]"},
+    {"input":{"questions":[{"id":"a","question":""}]},"path":"$.questions[0].question"},
+    {"input":{"questions":[{"id":"a","question":123}]},"path":"$.questions[0].question"},
+    {"input":{"questions":[{"id":"a","question":"问题","selection_type":"multiple"}]},"path":"$.questions[0].selection_type"},
+    {"input":{"questions":[{"id":"a","question":"问题","options":{"label":"A"}}]},"path":"$.questions[0].options"},
+    {"input":{"questions":[{"id":"a","question":"问题","options":[{"label":"A","value":"a"}]}]},"path":"$.questions[0].options[0]"},
+    {"input":{"questions":[{"id":"a","question":"问题","options":[""]}]},"path":"$.questions[0].options[0]"},
+    {"input":{"questions":[{"id":"a","question":"问题","options":[true]}]},"path":"$.questions[0].options[0]"},
+    {"input":{"questions":[{"id":"a","question":"一"},{"id":"a","question":"二"}]},"path":"$.questions"},
+    {"input":{"questions":[{"question":"一"},{"id":"q_1","question":"二"}]},"path":"$.questions"}
+  ]
+}

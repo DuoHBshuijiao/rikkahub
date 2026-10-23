@@ -2,8 +2,6 @@ package me.rerere.rikkahub.ui.components.message
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -13,9 +11,7 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -27,7 +23,6 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -39,16 +34,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.BubbleChatQuestion
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.Tools
@@ -107,7 +95,7 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
 ) {
     // ask_user 是交互式问答流程, 不走注册式渲染框架
     if (tool.toolName == ASK_USER_TOOL_NAME) {
-        AskUserToolStep(tool = tool, loading = loading, onToolAnswer = onToolAnswer)
+        AskUserToolStep(tool = tool, loading = loading, onToolAnswer = onToolAnswer, onToolApproval = onToolApproval)
         return
     }
 
@@ -301,196 +289,6 @@ private fun rememberToolDuration(tool: UIMessagePart.Tool, loading: Boolean): Du
         else -> null
     }
 }
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun ChainOfThoughtScope.AskUserToolStep(
-    tool: UIMessagePart.Tool,
-    loading: Boolean,
-    onToolAnswer: ((toolCallId: String, answer: String) -> Unit)?,
-) {
-    val isPending = tool.isPending
-    val isAnswered = tool.approvalState is ToolApprovalState.Answered
-    val arguments = tool.inputAsJson()
-
-    // Parse questions from arguments
-    val questions = remember(arguments) {
-        runCatching {
-            arguments.jsonObject["questions"]?.jsonArray?.map { q ->
-                val obj = q.jsonObject
-                AskUserQuestion(
-                    id = obj["id"]?.jsonPrimitive?.contentOrNull ?: "",
-                    question = obj["question"]?.jsonPrimitive?.contentOrNull ?: "",
-                    options = obj["options"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
-                    selectionType = obj["selection_type"]?.jsonPrimitive?.contentOrNull ?: "text"
-                )
-            } ?: emptyList()
-        }.getOrElse { emptyList() }
-    }
-
-    // Track answers for text/single questions
-    val answers = remember { mutableStateMapOf<String, String>() }
-    // Track selected options for multi questions
-    val multiAnswers = remember { mutableStateMapOf<String, Set<String>>() }
-
-    val firstQuestion = questions.firstOrNull()?.question ?: "..."
-
-    var expanded by remember { mutableStateOf(true) }
-
-    ControlledChainOfThoughtStep(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-        icon = {
-            if (loading) {
-                DotLoading(size = 10.dp)
-            } else {
-                Icon(
-                    imageVector = HugeIcons.BubbleChatQuestion,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = LocalContentColor.current.copy(alpha = 0.7f)
-                )
-            }
-        },
-        label = {
-            Text(
-                text = if (questions.size <= 1) firstQuestion else stringResource(
-                    R.string.chat_message_tool_ask_questions,
-                    questions.size
-                ),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.shimmer(isLoading = loading),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        content = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                questions.forEach { q ->
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = q.question,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-
-                        if (isPending && onToolAnswer != null) {
-                            if (q.options.isNotEmpty()) {
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    q.options.forEach { option ->
-                                        val selectedOptions = multiAnswers[q.id] ?: emptySet()
-                                        FilterChip(
-                                            selected = if (q.selectionType == "multi") {
-                                                option in selectedOptions
-                                            } else {
-                                                answers[q.id] == option
-                                            },
-                                            onClick = {
-                                                if (q.selectionType == "multi") {
-                                                    multiAnswers[q.id] = if (option in selectedOptions) {
-                                                        selectedOptions - option
-                                                    } else {
-                                                        selectedOptions + option
-                                                    }
-                                                } else {
-                                                    answers[q.id] = option
-                                                }
-                                            },
-                                            label = {
-                                                Text(
-                                                    text = option,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                )
-                                            },
-                                        )
-                                    }
-                                }
-                            }
-
-                            OutlinedTextField(
-                                value = answers[q.id] ?: "",
-                                onValueChange = { answers[q.id] = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                textStyle = MaterialTheme.typography.bodySmall,
-                                singleLine = false,
-                                minLines = 1,
-                                maxLines = 3,
-                            )
-                        } else if (isAnswered) {
-                            // Show the user's answer
-                            val answeredState = tool.approvalState as ToolApprovalState.Answered
-                            val answerJson = runCatching {
-                                JsonInstant.parseToJsonElement(answeredState.answer)
-                            }.getOrNull()
-                            val answerText = answerJson?.jsonObject?.get("answers")
-                                ?.jsonObject?.get(q.id)?.jsonPrimitive?.contentOrNull
-                                ?: answeredState.answer
-                            Text(
-                                text = answerText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                }
-
-                // Submit button
-                if (isPending && onToolAnswer != null) {
-                    FilledTonalButton(
-                        onClick = {
-                            val answerPayload = buildJsonObject {
-                                put("answers", buildJsonObject {
-                                    questions.forEach { q ->
-                                        when (q.selectionType) {
-                                            "multi" -> put(q.id, JsonPrimitive(
-                                                (multiAnswers[q.id].orEmpty().toList() +
-                                                    listOfNotNull(answers[q.id]?.takeIf { it.isNotBlank() }))
-                                                    .joinToString(", ")
-                                            ))
-                                            else -> put(q.id, JsonPrimitive(answers[q.id] ?: ""))
-                                        }
-                                    }
-                                })
-                            }
-                            onToolAnswer(tool.toolCallId, answerPayload.toString())
-                        },
-                        enabled = questions.all { q ->
-                            when (q.selectionType) {
-                                "multi" -> !multiAnswers[q.id].isNullOrEmpty() || !answers[q.id].isNullOrBlank()
-                                else -> !answers[q.id].isNullOrBlank()
-                            }
-                        },
-                        modifier = Modifier.align(Alignment.End),
-                    ) {
-                        Icon(
-                            imageVector = HugeIcons.Tick01,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = stringResource(R.string.chat_message_tool_submit),
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
-                    }
-                }
-            }
-        },
-    )
-}
-
-private data class AskUserQuestion(
-    val id: String,
-    val question: String,
-    val options: List<String>,
-    val selectionType: String = "text", // "text" | "single" | "multi"
-)
 
 @Composable
 private fun ToolDenyReasonDialog(

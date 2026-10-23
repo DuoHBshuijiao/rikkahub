@@ -15,6 +15,8 @@ data class Tool(
     val parameters: () -> InputSchema? = { null },
     val systemPrompt: (model: Model, messages: List<UIMessage>) -> String = { _, _ -> "" },
     val needsApproval: (JsonElement) -> Boolean = { false },
+    // Return a useful parameter error before a tool can enter the user approval flow.
+    val validateInput: (String) -> String? = { null },
     val execute: suspend (JsonElement) -> List<UIMessagePart>
 )
 

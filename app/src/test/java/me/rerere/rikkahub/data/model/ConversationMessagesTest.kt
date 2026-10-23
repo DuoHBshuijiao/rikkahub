@@ -1,17 +1,39 @@
 package me.rerere.rikkahub.data.model
 
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.interaction.AskUserProtocol
+import me.rerere.ai.interaction.AskUserValidationException
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.uuid.Uuid
 
 class ConversationMessagesTest {
+    @Test
+    fun `ask user validates answers against the latest pending call before saving`() {
+        val input = """{"questions":[{"id":"q","question":"语言？","selection_type":"single","options":["Kotlin"]}]}"""
+        val reply = UIMessage.assistant("").copy(parts = listOf(
+            UIMessagePart.Tool("ask", "ask_user", input, approvalState = ToolApprovalState.Pending)
+        ))
+        val conversation = conversationOf(reply.toMessageNode())
+        assertThrows(AskUserValidationException::class.java) {
+            conversation.withToolApproval("ask", ToolApprovalState.Answered("""{"answers":{}}"""))
+        }
+        val questions = AskUserProtocol.parse(input)
+        val draft = AskUserProtocol.newDraft(questions).update("q") { it.edit(questions.single(), "q:c0", "自己修改的答案") }
+        val answer = ToolApprovalState.Answered(AskUserProtocol.encodeAnswer(questions, draft))
+        val updated = conversation.withToolApproval("ask", answer)!!
+        assertEquals(answer, updated.currentMessages.single().getTools().single().approvalState)
+        assertEquals(ToolApprovalState.Pending, conversation.currentMessages.single().getTools().single().approvalState)
+        assertNull(updated.withToolApproval("ask", answer))
+    }
+
     @Test
     fun `deleting the only message of a node removes the node`() {
         val user = UIMessage.user("hi")
@@ -126,7 +148,8 @@ class ConversationMessagesTest {
 
     @Test
     fun `nothing to cancel returns null`() {
-        val conversation = conversationOf(UIMessage.user("hi").toMessageNode(), UIMessage.assistant("done").toMessageNode())
+        val conversation =
+            conversationOf(UIMessage.user("hi").toMessageNode(), UIMessage.assistant("done").toMessageNode())
 
         assertNull(conversation.cancelInterruptedTools())
         assertNull(Conversation.ofId(Uuid.random()).cancelInterruptedTools())

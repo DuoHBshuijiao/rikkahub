@@ -1,3 +1,4 @@
+import { AskUserConversationContext } from "~/components/message/parts/ask-user-part";
 import * as React from "react";
 
 import { useNavigate, useParams } from "react-router";
@@ -1114,101 +1115,103 @@ function ConversationsPageInner() {
   );
 
   return (
-    <SidebarProvider defaultOpen className="h-svh overflow-hidden">
-      <ConversationSidebar
-        conversations={conversations}
-        activeId={activeId}
-        loading={loading}
-        error={error}
-        hasMore={hasMore}
-        loadMore={loadMore}
-        userName={
-          settings?.displaySetting.userNickname?.trim() || t("conversations.user.default_name")
-        }
-        userAvatar={settings?.displaySetting.userAvatar}
-        assistants={assistants}
-        assistantTags={settings?.assistantTags ?? []}
-        currentAssistantId={currentAssistantId}
-        onSelect={handleSelect}
-        onAssistantChange={handleAssistantChange}
-        onPin={handleTogglePinConversation}
-        onRegenerateTitle={handleRegenerateConversationTitle}
-        onMoveToAssistant={handleMoveConversation}
-        onUpdateTitle={handleUpdateConversationTitle}
-        onDelete={handleDeleteConversation}
-        onCreateConversation={handleCreateConversation}
-        webAuthEnabled={settings?.webServerJwtEnabled === true}
-        folders={folders}
-        selectedFolderId={selectedFolderId}
-        onSelectFolder={handleSelectFolder}
-        onCreateFolder={handleCreateFolder}
-        onRenameFolder={handleRenameFolder}
-        onDeleteFolder={handleDeleteFolder}
-        onMoveToFolder={handleMoveConversationToFolder}
-      />
-      <SidebarInset className="flex min-h-svh flex-col overflow-hidden">
-        <div className="flex items-center gap-2 border-b px-4 py-3">
-          <SidebarTrigger />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm text-muted-foreground">
-              {activeConversation
-                ? activeConversation.title
-                : t("conversations.header.select_conversation")}
-            </div>
-            {currentModel && currentProvider ? (
-              <div className="truncate text-xs text-muted-foreground/80">
-                {`${getAssistantDisplayName(currentAssistant?.name)} / ${getModelDisplayName(currentModel.displayName, currentModel.modelId)} (${currentProvider.name})`}
+    <AskUserConversationContext.Provider value={activeId ?? ""}>
+      <SidebarProvider defaultOpen className="h-svh overflow-hidden">
+        <ConversationSidebar
+          conversations={conversations}
+          activeId={activeId}
+          loading={loading}
+          error={error}
+          hasMore={hasMore}
+          loadMore={loadMore}
+          userName={
+            settings?.displaySetting.userNickname?.trim() || t("conversations.user.default_name")
+          }
+          userAvatar={settings?.displaySetting.userAvatar}
+          assistants={assistants}
+          assistantTags={settings?.assistantTags ?? []}
+          currentAssistantId={currentAssistantId}
+          onSelect={handleSelect}
+          onAssistantChange={handleAssistantChange}
+          onPin={handleTogglePinConversation}
+          onRegenerateTitle={handleRegenerateConversationTitle}
+          onMoveToAssistant={handleMoveConversation}
+          onUpdateTitle={handleUpdateConversationTitle}
+          onDelete={handleDeleteConversation}
+          onCreateConversation={handleCreateConversation}
+          webAuthEnabled={settings?.webServerJwtEnabled === true}
+          folders={folders}
+          selectedFolderId={selectedFolderId}
+          onSelectFolder={handleSelectFolder}
+          onCreateFolder={handleCreateFolder}
+          onRenameFolder={handleRenameFolder}
+          onDeleteFolder={handleDeleteFolder}
+          onMoveToFolder={handleMoveConversationToFolder}
+        />
+        <SidebarInset className="flex min-h-svh flex-col overflow-hidden">
+          <div className="flex items-center gap-2 border-b px-4 py-3">
+            <SidebarTrigger />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm text-muted-foreground">
+                {activeConversation
+                  ? activeConversation.title
+                  : t("conversations.header.select_conversation")}
               </div>
-            ) : null}
-          </div>
-        </div>
-
-        {!isMobile ? (
-          <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-            <ResizablePanel
-              defaultSize={hasWorkbenchPanel ? 64 : 100}
-              minSize={40}
-              className="flex min-h-0 flex-col"
-            >
-              {chatContent}
-            </ResizablePanel>
-            <ResizableHandle
-              withHandle
-              className={cn(!hasWorkbenchPanel && "pointer-events-none opacity-0")}
-            />
-            <ResizablePanel
-              defaultSize={hasWorkbenchPanel ? 36 : 0}
-              minSize={24}
-              collapsible
-              collapsedSize={0}
-              panelRef={workbenchPanelRef}
-              className="flex min-h-0 flex-col"
-            >
-              {panel ? (
-                <WorkbenchHost panel={panel} onClose={closePanel} className="border-l-0" />
+              {currentModel && currentProvider ? (
+                <div className="truncate text-xs text-muted-foreground/80">
+                  {`${getAssistantDisplayName(currentAssistant?.name)} / ${getModelDisplayName(currentModel.displayName, currentModel.modelId)} (${currentProvider.name})`}
+                </div>
               ) : null}
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        ) : (
-          chatContent
-        )}
+            </div>
+          </div>
 
-        {isMobile && panel ? (
-          <Drawer
-            open={hasWorkbenchPanel}
-            onOpenChange={(open) => {
-              if (!open) {
-                closePanel();
-              }
-            }}
-            direction="bottom"
-          >
-            <DrawerContent className="h-[85vh] max-h-[85vh]">
-              <WorkbenchHost panel={panel} onClose={closePanel} className="border-l-0" />
-            </DrawerContent>
-          </Drawer>
-        ) : null}
-      </SidebarInset>
-    </SidebarProvider>
+          {!isMobile ? (
+            <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+              <ResizablePanel
+                defaultSize={hasWorkbenchPanel ? 64 : 100}
+                minSize={40}
+                className="flex min-h-0 flex-col"
+              >
+                {chatContent}
+              </ResizablePanel>
+              <ResizableHandle
+                withHandle
+                className={cn(!hasWorkbenchPanel && "pointer-events-none opacity-0")}
+              />
+              <ResizablePanel
+                defaultSize={hasWorkbenchPanel ? 36 : 0}
+                minSize={24}
+                collapsible
+                collapsedSize={0}
+                panelRef={workbenchPanelRef}
+                className="flex min-h-0 flex-col"
+              >
+                {panel ? (
+                  <WorkbenchHost panel={panel} onClose={closePanel} className="border-l-0" />
+                ) : null}
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          ) : (
+            chatContent
+          )}
+
+          {isMobile && panel ? (
+            <Drawer
+              open={hasWorkbenchPanel}
+              onOpenChange={(open) => {
+                if (!open) {
+                  closePanel();
+                }
+              }}
+              direction="bottom"
+            >
+              <DrawerContent className="h-[85vh] max-h-[85vh]">
+                <WorkbenchHost panel={panel} onClose={closePanel} className="border-l-0" />
+              </DrawerContent>
+            </Drawer>
+          ) : null}
+        </SidebarInset>
+      </SidebarProvider>
+    </AskUserConversationContext.Provider>
   );
 }

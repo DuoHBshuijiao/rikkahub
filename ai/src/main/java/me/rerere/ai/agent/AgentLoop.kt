@@ -68,10 +68,19 @@ internal class AgentLoop(
         val updated = current.copy(
             parts = current.parts.map { part ->
                 if (part is UIMessagePart.Tool && !part.isExecuted &&
-                    part.approvalState == ToolApprovalState.Auto &&
-                    findTool(part.toolName)?.needsApproval?.invoke(part.inputAsJson()) == true
+                    part.approvalState == ToolApprovalState.Auto
                 ) {
-                    part.copy(approvalState = ToolApprovalState.Pending)
+                    val definition = findTool(part.toolName)
+                    val inputError = definition?.validateInput?.invoke(part.input)
+                    when {
+                        inputError != null -> part.copy(output = listOf(UIMessagePart.Text(buildJsonObject {
+                            put("error", "invalid_tool_arguments")
+                            put("message", inputError)
+                        }.toString())))
+                        definition?.needsApproval?.invoke(part.inputAsJson()) == true ->
+                            part.copy(approvalState = ToolApprovalState.Pending)
+                        else -> part
+                    }
                 } else {
                     part
                 }
