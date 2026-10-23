@@ -211,7 +211,8 @@ class MessageFtsManager(private val database: AppDatabase) {
                 }
                 return db.query(
                     """
-                    SELECT node_id, message_id, conversation_id, message_fts.title, update_at,
+                    SELECT message_fts.node_id, message_fts.message_id, message_fts.conversation_id,
+                           message_fts.title, message_fts.update_at,
                            message_fts.text, $highlight, conversation.assistant_id
                     FROM message_fts
                     JOIN conversationentity AS conversation ON conversation.id = message_fts.conversation_id
@@ -219,7 +220,7 @@ class MessageFtsManager(private val database: AppDatabase) {
                     ORDER BY ${sort.orderBy.replace(
                         "rank",
                         "message_fts.rank"
-                    ).replace("update_at", "message_fts.update_at")}, message_id
+                    ).replace("update_at", "message_fts.update_at")}, message_fts.message_id
                     LIMIT 50
                     """.trimIndent(),
                     arguments.toTypedArray(),

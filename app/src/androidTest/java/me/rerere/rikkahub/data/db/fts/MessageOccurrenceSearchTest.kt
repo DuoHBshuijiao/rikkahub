@@ -18,6 +18,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.time.Instant
 import kotlin.uuid.Uuid
 
 @RunWith(AndroidJUnit4::class)
@@ -42,15 +43,22 @@ class MessageOccurrenceSearchTest {
         context.deleteDatabase(databaseName)
     }
 
-    private suspend fun seed(vararg texts: String): List<UIMessage> {
+    private suspend fun seed(
+        vararg texts: String,
+        conversationId: Uuid = this.conversationId,
+        assistantId: String = this.assistantId,
+        nodeId: String = this.nodeId,
+        title: String = "创作记录",
+        updateAt: Long = 0,
+    ): List<UIMessage> {
         database.conversationDao().insert(
             ConversationEntity(
                 id = conversationId.toString(),
                 assistantId = assistantId,
-                title = "创作记录",
+                title = title,
                 nodes = "[]",
                 createAt = 0,
-                updateAt = 0,
+                updateAt = updateAt,
                 chatSuggestions = "[]",
                 isPinned = false,
             )
@@ -87,6 +95,61 @@ class MessageOccurrenceSearchTest {
         val messages = seed("第一版窗前明月", "第二版山中明月")
         val candidates = manager.searchCandidates("明月", MessageSearchSort.RELEVANCE, null)
         assertEquals(messages.map { it.id.toString() }.toSet(), candidates.map { it.result.messageId }.toSet())
+    }
+
+    @Test
+    fun candidateSearchReturnsIndexedFieldsForEverySortAndAssistantScope() = runBlocking {
+        suspend fun addConversation(owner: String, updateAt: Long): MessageSearchResult {
+            val id = Uuid.random()
+            val node = Uuid.random().toString()
+            val title = "索引标题 $updateAt"
+            val message = seed(
+                "窗前明月",
+                conversationId = id,
+                assistantId = owner,
+                nodeId = node,
+                title = title,
+                updateAt = updateAt,
+            ).single()
+            return MessageSearchResult(
+                nodeId = node,
+                messageId = message.id.toString(),
+                conversationId = id.toString(),
+                title = title,
+                updateAt = Instant.ofEpochMilli(updateAt),
+                snippet = "",
+            )
+        }
+
+        val otherAssistantId = Uuid.random().toString()
+        val oldest = addConversation(assistantId, 1_000)
+        val newer = addConversation(assistantId, 2_000)
+        val newest = addConversation(otherAssistantId, 3_000)
+        val expected = listOf(oldest, newer, newest)
+        manager.ensureIndex()
+        // Distinguish indexed metadata from the joined conversation table's columns.
+        expected.forEach { result ->
+            val entity = database.conversationDao().getConversationById(result.conversationId)!!
+            database.conversationDao().update(entity.copy(title = "会话表标题", updateAt = 10_000))
+        }
+
+        MessageSearchSort.entries.forEach { sort ->
+            listOf(listOf(assistantId), null).forEach { scope ->
+                val candidates = manager.searchCandidates("明月", sort, scope)
+                val inScope = if (scope == null) expected else listOf(oldest, newer)
+                val ordered = if (sort == MessageSearchSort.OLDEST_FIRST) inScope else inScope.reversed()
+                assertEquals(ordered, candidates.map { it.result })
+                candidates.forEach { candidate ->
+                    assertEquals(
+                        if (candidate.result == newest) otherAssistantId else assistantId,
+                        candidate.assistantId,
+                    )
+                    assertTrue(candidate.matchedTerms.any { "明月" in it })
+                }
+            }
+            assertTrue(manager.searchCandidates("明月", sort, emptyList()).isEmpty())
+            assertTrue(manager.searchCandidates("明月", sort, listOf(Uuid.random().toString())).isEmpty())
+        }
     }
 
     @Test
