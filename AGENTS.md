@@ -23,12 +23,17 @@ Material 3 look (cards with dividers, plain forms).
 ```bash
 ./gradlew assembleGithubDebug    # 构建 GitHub 渠道的 Debug APK
 ./gradlew assembleGithubRelease  # 构建 GitHub Release / 每日构建用的 APK
+./gradlew assembleGithubRelease -Prikkahub.abi=arm64-v8a # 仅构建可分发的 arm64-v8a Release APK
 ./gradlew bundlePlayRelease      # 构建上架 Google Play 的 AAB
 ./gradlew test                   # 运行所有模块的 JVM 单元测试
 ./gradlew lint                   # 运行 Android Lint
 ./gradlew spotlessApply          # 用 ktlint 格式化相对 origin/master 改动过的 Kotlin 文件
 ./gradlew spotlessCheck          # 只检查格式不改文件
 ```
+
+构建单架构发行包使用 `rikkahub.abi`，不要用 `android.injected.build.abi`；后者是 IDE 部署参数，
+会给 APK 添加 `android:testOnly="true"`，导致普通安装器报 `INSTALL_FAILED_TEST_ONLY (-15)`。
+交付前检查最终 APK 的 `testOnly` 标记（必须不存在或为 `false`）、ABI、包名和签名。
 
 App 有一个 `distribution` 维度的 product flavor：`github`（默认）和 `play`，共用同一个 applicationId。
 渠道差异用 `BuildConfig.IS_PLAY_STORE` 判断（如 Play 版不检查更新、不显示更新提醒）。

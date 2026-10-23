@@ -14,6 +14,16 @@ plugins {
     alias(libs.plugins.baselineprofile)
 }
 
+// Use a project property for distributable APKs; android.injected.build.abi marks APKs as testOnly.
+val supportedAbis = listOf("arm64-v8a", "x86_64")
+val apkAbis = providers.gradleProperty("rikkahub.abi").orNull?.let { abi ->
+    require(abi in supportedAbis) { "Unsupported rikkahub.abi: $abi. Expected one of $supportedAbis" }
+    listOf(abi)
+} ?: supportedAbis
+// AppBundle tasks usually contain "bundle" in their name.
+//noinspection WrongGradleMethod
+val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
+
 android {
     namespace = "me.rerere.rikkahub"
     compileSdk {
@@ -32,19 +42,19 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            // APK splits and ndk.abiFilters cannot be configured at the same time.
+            if (isBuildingBundle) {
+                abiFilters += apkAbis
+            }
         }
     }
 
     splits {
         abi {
-            // AppBundle tasks usually contain "bundle" in their name
-            //noinspection WrongGradleMethod
-            val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
             isEnable = !isBuildingBundle
             reset()
-            include("arm64-v8a", "x86_64")
-            isUniversalApk = true
+            include(*apkAbis.toTypedArray())
+            isUniversalApk = apkAbis.size > 1
         }
     }
 
