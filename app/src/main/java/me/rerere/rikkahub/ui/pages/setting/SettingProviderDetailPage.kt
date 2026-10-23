@@ -124,7 +124,6 @@ import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
 import me.rerere.rikkahub.ui.components.ui.PagerTab
 import me.rerere.rikkahub.ui.components.ui.PagerTabs
 import me.rerere.rikkahub.ui.components.ui.ShareSheet
-import me.rerere.rikkahub.ui.components.ui.SiliconFlowPowerByIcon
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.cardGroupItemShape
@@ -335,15 +334,6 @@ private fun SettingProviderConfigPage(
                         { ProviderQuotaText(providerSetting = provider) }
                     } else null,
                     onEdit = { internalProvider = apiKeyProvider.withQuotaQuery(it) }
-                )
-            }
-
-            // 硅基流动图标
-            if (provider is ProviderSetting.OpenAI && provider.baseUrl.contains("siliconflow.cn")) {
-                SiliconFlowPowerByIcon(
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(vertical = 16.dp)
                 )
             }
         }

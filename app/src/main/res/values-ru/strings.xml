@@ -303,11 +303,6 @@
   <string name="deep_thinking">Глубокое мышление</string>
   <string name="deep_thinking_seconds">Думал %1$.1f секунд</string>
   <string name="delete">Удалить</string>
-  <string name="donate_page_afdian_desc">Для пользователей 🇨🇳</string>
-  <string name="donate_page_donation_methods">Способы пожертвований</string>
-  <string name="donate_page_kofi_desc">Для пользователей по всему миру</string>
-  <string name="donate_page_sponsor_list">Список спонсоров</string>
-  <string name="donate_page_title">Поддержать</string>
   <string name="edit">Редактировать</string>
   <string name="editing">Редактирование</string>
   <string name="emoji_picker_search_placeholder">Поиск эмодзи...</string>
@@ -529,7 +524,6 @@
   <string name="regenerate">Сгенерировать заново</string>
   <string name="regenerate_confirm_message">Вы уверены, что хотите заново сгенерировать это сообщение? Все сообщения ниже этого будут удалены.</string>
   <string name="render_with_webview">Отображать в WebView</string>
-  <string name="rikkahub_provider_description">Официальный бесплатный AI-сервис, использующий средства спонсоров для предоставления новым пользователям бесплатных моделей в качестве резерва; API-ключ не требуется. Действуют строгие ограничения по частоте запросов. Если у вас есть собственный провайдер, используйте его по возможности.</string>
   <string name="safe_mode_assistants">Помощники</string>
   <string name="safe_mode_copy">Копировать</string>
   <string name="safe_mode_crash_report">Отчёт о сбое</string>
@@ -771,8 +765,6 @@
   <string name="setting_page_display_setting_desc">Управление настройками отображения</string>
   <string name="setting_page_documentation">Документация</string>
   <string name="setting_page_documentation_desc">Просмотрите инструкции по использованию приложения и справочную документацию</string>
-  <string name="setting_page_donate">Поддержать</string>
-  <string name="setting_page_donate_desc">Если вам нравится, поддержите автора</string>
   <string name="setting_page_dynamic_color">Динамический цвет</string>
   <string name="setting_page_dynamic_color_desc">Динамически создавать цвета темы приложения на основе обоев</string>
   <string name="setting_page_extensions">Расширения</string>
@@ -802,10 +794,6 @@
   <string name="setting_page_share">Поделиться</string>
   <string name="setting_page_share_desc">Поделиться этим приложением с друзьями</string>
   <string name="setting_page_share_text">RikkaHub — открытый Android-ассистент с ИИ\n\nСайт: https://rikka-ai.com/</string>
-  <string name="setting_page_sponsor_alert_confirm">Пожертвовать</string>
-  <string name="setting_page_sponsor_alert_desc">Вы запустили приложение более 100 раз! Если вам нравится им пользоваться, пожалуйста, поддержите разработчика.</string>
-  <string name="setting_page_sponsor_alert_dismiss">Не сейчас</string>
-  <string name="setting_page_sponsor_alert_title">Поддержать разработчика</string>
   <string name="setting_page_theme_setting">Тема</string>
   <string name="setting_page_theme_setting_desc">Настроить цветовую схему приложения</string>
   <string name="setting_theme_page_preset_themes">Предустановленные темы</string>
@@ -909,7 +897,6 @@
   <string name="setting_provider_page_save_success">Сохранено успешно</string>
   <string name="setting_provider_page_scan_qr_code">Сканировать QR-код</string>
   <string name="setting_provider_page_search_providers">Поиск поставщиков</string>
-  <string name="setting_provider_page_recommend">Рекомендуемые поставщики</string>
   <string name="setting_provider_page_select_all">Выбрать все (%1$d)</string>
   <string name="setting_provider_page_select_from_gallery">Выбрать из галереи</string>
   <string name="setting_provider_page_service_account_email">Электронная почта служебной учётной записи</string>
@@ -971,8 +958,6 @@
   <string name="share">Поделиться</string>
   <string name="share_handler_page_title">Выбрать ассистента</string>
   <string name="shortcut_take_picture">Сделать фото и спросить</string>
-  <string name="silicon_flow_description">**Ведущий мировой поставщик ИИ-возможностей, ускоряющий AGI на благо человечества.**</string>
-  <string name="silicon_flow_website">Веб-сайт: [https://cloud.siliconflow.cn/](https://cloud.siliconflow.cn/i/u1Ia4Ycf)</string>
   <string name="skill_detail_page_content">Контент</string>
   <string name="skill_detail_page_create">Создать</string>
   <string name="skill_detail_page_delete_confirm">Вы уверены, что хотите удалить файл "%s"?</string>

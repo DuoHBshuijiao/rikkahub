@@ -19,6 +19,10 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ProviderSetting
+import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.tts.provider.TTSProviderSetting
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -193,6 +197,63 @@ class SettingsStoreTest {
         assertEquals(DEFAULT_PROVIDERS.map { it.id }, settings.providers.map { it.id })
         assertEquals(emptyList<Uuid>(), settings.favoriteModels)
         assertEquals(0, settings.searchServiceSelected)
+    }
+
+    @Test
+    fun `retired presets keep their configuration after restart and stay deleted when removed`() = runBlocking {
+        val model = Model(modelId = "configured-model")
+        val provider = ProviderSetting.OpenAI(
+            id = Uuid.parse("1b1395ed-b702-4aeb-8bc1-b681c4456953"),
+            name = "My provider",
+            baseUrl = "https://custom.example.com/v1",
+            apiKey = "configured-key",
+            models = listOf(model),
+            builtIn = true,
+        )
+        val tts = TTSProviderSetting.OpenAI(
+            id = Uuid.parse("e36b22ef-ca82-40ab-9e70-60cad861911c"),
+            name = "My voice",
+            baseUrl = "https://custom.example.com/v1",
+            apiKey = "configured-voice-key",
+        )
+        val store = open().store
+        store.awaitLoaded()
+        store.update { latest ->
+            latest.copy(
+                providers = latest.providers + provider,
+                chatModelId = model.id,
+                favoriteModels = listOf(model.id),
+                assistants = latest.assistants.map { it.copy(chatModelId = model.id) },
+                ttsProviders = latest.ttsProviders + tts,
+                selectedTTSProviderId = tts.id,
+            )
+        }
+
+        val reopenedStore = open().store
+        val restored = reopenedStore.awaitLoaded()
+        val restoredProvider = restored.providers.single { it.id == provider.id }
+        assertFalse(restoredProvider.builtIn)
+        assertEquals(
+            JsonInstant.encodeToString<ProviderSetting>(provider),
+            JsonInstant.encodeToString(restoredProvider),
+        )
+        assertEquals(model.id, restored.chatModelId)
+        assertEquals(listOf(model.id), restored.favoriteModels)
+        assertEquals(model.id, restored.assistants.first().chatModelId)
+        assertEquals(tts, restored.ttsProviders.single { it.id == tts.id })
+        assertEquals(tts.id, restored.selectedTTSProviderId)
+
+        reopenedStore.update { latest ->
+            latest.copy(
+                providers = latest.providers.filter { it.id != provider.id },
+                ttsProviders = latest.ttsProviders.filter { it.id != tts.id },
+                selectedTTSProviderId = DEFAULT_SYSTEM_TTS_ID,
+            )
+        }
+
+        val afterDeletion = reopened()
+        assertFalse(afterDeletion.providers.any { it.id == provider.id })
+        assertFalse(afterDeletion.ttsProviders.any { it.id == tts.id })
     }
 
     @Test

@@ -14,6 +14,7 @@ import me.rerere.hugeicons.stroke.Wrench01
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -499,13 +500,22 @@ private fun ExportedChatImage(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        // Use painterResource for the logo
-                        val painter = painterResource(id = R.mipmap.ic_launcher_foreground)
-                        Image(
-                            painter = painter,
-                            contentDescription = "Logo",
-                            modifier = Modifier.size(60.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                        ) {
+                            Image(
+                                painter = painterResource(R.mipmap.ic_launcher_background),
+                                contentDescription = null,
+                                modifier = Modifier.matchParentSize()
+                            )
+                            Image(
+                                painter = painterResource(R.mipmap.ic_launcher_foreground),
+                                contentDescription = "Logo",
+                                modifier = Modifier.matchParentSize()
+                            )
+                        }
                     }
 
                     // Messages

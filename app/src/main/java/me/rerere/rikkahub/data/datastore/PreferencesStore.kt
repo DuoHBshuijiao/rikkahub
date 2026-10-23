@@ -183,9 +183,6 @@ class SettingsStore internal constructor(
         // 统计
         val LAUNCH_COUNT = intPreferencesKey("launch_count")
 
-        // 赞助提醒
-        val SPONSOR_ALERT_DISMISSED_AT = intPreferencesKey("sponsor_alert_dismissed_at")
-
         private val LOCAL_FILE_REFERENCE_ROOT = stringPreferencesKey("local_file_reference_root_v1")
 
         internal suspend fun rebuildFileReferencesBeforeInitialization(context: Context) {
