@@ -46,6 +46,7 @@ internal data class ChatAttachmentPickerActions(
 internal fun rememberChatAttachmentPickerActions(
     inputState: ChatInputState,
     setting: Settings,
+    workspaceId: String?,
     onAttachmentAdded: () -> Unit,
 ): ChatAttachmentPickerActions {
     val context = LocalContext.current
@@ -168,6 +169,22 @@ internal fun rememberChatAttachmentPickerActions(
         }
 
     val scope = rememberCoroutineScope()
+    var showFilePicker by remember { mutableStateOf(false) }
+    if (showFilePicker) {
+        ChatFilePickerSheet(
+            workspaceId = workspaceId,
+            onPickLocal = {
+                showFilePicker = false
+                filePickerLauncher.launch(arrayOf("*/*"))
+            },
+            onFilesAdded = { documents ->
+                inputState.addFiles(documents)
+                showFilePicker = false
+                onAttachmentAdded()
+            },
+            onDismiss = { showFilePicker = false },
+        )
+    }
     var showSketch by remember { mutableStateOf(false) }
     if (showSketch) {
         SketchDialog(
@@ -187,7 +204,7 @@ internal fun rememberChatAttachmentPickerActions(
         onPickImage = { imagePickerLauncher.launch("image/*") },
         onPickVideo = { videoPickerLauncher.launch("video/*") },
         onPickAudio = { audioPickerLauncher.launch("audio/*") },
-        onPickFile = { filePickerLauncher.launch(arrayOf("*/*")) },
+        onPickFile = { showFilePicker = true },
         onSketch = { showSketch = true },
     )
 }

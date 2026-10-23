@@ -2,6 +2,7 @@ package me.rerere.workspace
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -77,6 +78,24 @@ class LocalWorkspaceBackendTest {
             File(manager.filesDir(root), "notes/a.txt").canonicalFile,
             backend.localFile(WorkspaceStorageArea.FILES, "notes/a.txt"),
         )
+    }
+
+    @Test
+    fun attachmentExportPreservesLargeDocumentBeyondReadLimit() {
+        val manager = WorkspaceManager(
+            baseDir = tempFolder.newFolder("workspaces"),
+            config = WorkspaceConfig(maxReadBytes = 32_000),
+        )
+        manager.ensureWorkspace(root)
+        val content = "参考文档".repeat(12_500) + "\n文档结尾"
+        File(manager.filesDir(root), "reference.txt").writeText(content)
+        val backend = manager.backend(root)
+
+        assertThrows(IllegalArgumentException::class.java) { backend.readText("reference.txt") }
+        val exported = ByteArrayOutputStream()
+        backend.exportFile(WorkspaceStorageArea.FILES, "reference.txt", exported)
+
+        assertEquals(content, exported.toString(Charsets.UTF_8.name()))
     }
 
     @Test

@@ -2,7 +2,9 @@ package me.rerere.workspace.ssh
 
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.KeyPair
+import me.rerere.workspace.WorkspaceConfig
 import me.rerere.workspace.WorkspaceStorageArea
+import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.server.SshServer
 import org.apache.sshd.server.auth.password.PasswordAuthenticator
 import org.apache.sshd.server.auth.pubkey.PublickeyAuthenticator
@@ -242,6 +244,21 @@ class SshWorkspaceBackendTest {
         assertTrue(backend.deleteFile(WorkspaceStorageArea.FILES, "notes", recursive = true))
         assertFalse(File(remoteDir, "notes").exists())
         assertFalse(backend.deleteFile(WorkspaceStorageArea.FILES, "notes", recursive = true))
+    }
+
+    @Test
+    fun attachmentExportPreservesLargeDocumentBeyondReadLimit() {
+        server.fileSystemFactory = VirtualFileSystemFactory(tempFolder.root.toPath())
+        val config = trustedConfig().copy(remoteDir = "/remote")
+        val backend = SshWorkspaceBackend(pool, WORKSPACE_ID, config, WorkspaceConfig(maxReadBytes = 32_000))
+        val content = "参考文档".repeat(12_500) + "\n文档结尾"
+        File(remoteDir, "reference.txt").writeText(content)
+
+        assertThrows(IllegalArgumentException::class.java) { backend.readText("reference.txt") }
+        val exported = ByteArrayOutputStream()
+        backend.exportFile(WorkspaceStorageArea.FILES, "reference.txt", exported)
+
+        assertEquals(content, exported.toString(Charsets.UTF_8.name()))
     }
 
     @Test
