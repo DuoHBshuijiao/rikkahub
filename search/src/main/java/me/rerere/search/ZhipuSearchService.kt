@@ -42,7 +42,7 @@ object ZhipuSearchService : SearchService<SearchServiceOptions.ZhipuOptions> {
             properties = buildJsonObject {
                 put("query", buildJsonObject {
                     put("type", "string")
-                    put("description", "search keyword")
+                    put("description", SEARCH_QUERY_DESCRIPTION)
                 })
             },
             required = listOf("query")
@@ -81,16 +81,15 @@ object ZhipuSearchService : SearchService<SearchServiceOptions.ZhipuOptions> {
                     error("Failed to decode response: $bodyRaw")
                 }.getOrThrow()
 
-                return@withContext Result.success(
-                    SearchResult(
-                        items = response.searchResult.map {
-                            SearchResultItem(
-                                title = it.title,
-                                url = it.link,
-                                text = it.content,
-                            )
-                        }
-                    ))
+                return@withContext Result.success(SearchResult(
+                    items = response.searchResult.map {
+                        SearchResultItem(
+                            title = it.title,
+                            url = it.link,
+                            text = it.content,
+                        )
+                    }
+                ))
             } else {
                 println(response.body?.string())
                 error("response failed #${response.code}")

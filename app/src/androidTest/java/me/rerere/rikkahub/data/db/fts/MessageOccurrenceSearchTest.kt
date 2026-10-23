@@ -98,7 +98,7 @@ class MessageOccurrenceSearchTest {
     }
 
     @Test
-    fun candidateSearchReturnsIndexedFieldsForEverySortAndAssistantScope() = runBlocking {
+    fun searchesReadCurrentConversationMetadataForEverySortAndAssistantScope() = runBlocking {
         suspend fun addConversation(owner: String, updateAt: Long): MessageSearchResult {
             val id = Uuid.random()
             val node = Uuid.random().toString()
@@ -125,23 +125,34 @@ class MessageOccurrenceSearchTest {
         val oldest = addConversation(assistantId, 1_000)
         val newer = addConversation(assistantId, 2_000)
         val newest = addConversation(otherAssistantId, 3_000)
-        val expected = listOf(oldest, newer, newest)
+        val indexed = listOf(oldest, newer, newest)
         manager.ensureIndex()
-        // Distinguish indexed metadata from the joined conversation table's columns.
-        expected.forEach { result ->
+        // Rename and change timestamps without reindexing; both search paths must read the conversation table.
+        val expected = indexed.map { result ->
+            val current = result.copy(
+                title = "会话表标题 ${result.updateAt.toEpochMilli()}",
+                updateAt = Instant.ofEpochMilli(10_000 - result.updateAt.toEpochMilli()),
+            )
             val entity = database.conversationDao().getConversationById(result.conversationId)!!
-            database.conversationDao().update(entity.copy(title = "会话表标题", updateAt = 10_000))
+            database.conversationDao().update(
+                entity.copy(title = current.title, updateAt = current.updateAt.toEpochMilli())
+            )
+            current
         }
 
         MessageSearchSort.entries.forEach { sort ->
             listOf(listOf(assistantId), null).forEach { scope ->
                 val candidates = manager.searchCandidates("明月", sort, scope)
-                val inScope = if (scope == null) expected else listOf(oldest, newer)
-                val ordered = if (sort == MessageSearchSort.OLDEST_FIRST) inScope else inScope.reversed()
+                val inScope = if (scope == null) expected else expected.take(2)
+                val ordered = if (sort == MessageSearchSort.OLDEST_FIRST) inScope.reversed() else inScope
                 assertEquals(ordered, candidates.map { it.result })
+                assertEquals(
+                    ordered,
+                    manager.search("明月", sort, scope).map { it.copy(snippet = "") },
+                )
                 candidates.forEach { candidate ->
                     assertEquals(
-                        if (candidate.result == newest) otherAssistantId else assistantId,
+                        if (candidate.result.conversationId == newest.conversationId) otherAssistantId else assistantId,
                         candidate.assistantId,
                     )
                     assertTrue(candidate.matchedTerms.any { "明月" in it })

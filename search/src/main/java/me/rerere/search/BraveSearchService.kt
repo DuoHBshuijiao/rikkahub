@@ -40,7 +40,7 @@ object BraveSearchService : SearchService<SearchServiceOptions.BraveOptions> {
             properties = buildJsonObject {
                 put("query", buildJsonObject {
                     put("type", "string")
-                    put("description", "search keyword")
+                    put("description", SEARCH_QUERY_DESCRIPTION)
                 })
             },
             required = listOf("query")
@@ -56,8 +56,8 @@ object BraveSearchService : SearchService<SearchServiceOptions.BraveOptions> {
         runCatching {
             val query = params["query"]?.jsonPrimitive?.content ?: error("query is required")
             val url = "https://api.search.brave.com/res/v1/web/search" +
-                    "?q=${java.net.URLEncoder.encode(query, "UTF-8")}" +
-                    "&count=${commonOptions.resultSize}"
+                "?q=${java.net.URLEncoder.encode(query, "UTF-8")}" +
+                "&count=${commonOptions.resultSize}"
 
             val request = Request.Builder()
                 .url(url)

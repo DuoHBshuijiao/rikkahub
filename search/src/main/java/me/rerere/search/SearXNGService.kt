@@ -37,7 +37,7 @@ object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
             properties = buildJsonObject {
                 put("query", buildJsonObject {
                     put("type", "string")
-                    put("description", "search keyword")
+                    put("description", SEARCH_QUERY_DESCRIPTION)
                 })
             },
             required = listOf("query")
@@ -125,7 +125,6 @@ object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
     ): Result<ScrapedResult> {
         return Result.failure(Exception("Scraping is not supported for SearXNG"))
     }
-
 
     @Serializable
     data class SearXNGResponse(
