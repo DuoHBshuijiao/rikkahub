@@ -23,8 +23,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.withContext
 
 /**
  * 渲染 Markdown 文本，支持 GFM（表格、任务列表、删除线）、LaTeX 公式和内嵌 HTML。
@@ -102,7 +102,9 @@ fun Markdown(
 /**
  * 解析 [content] 并在它变化时更新。
  *
- * 首次解析是同步的，保证第一帧就有内容；之后的更新在后台线程进行。
+ * 首次解析是同步的，保证第一帧就有内容；之后只有纯文本解析在后台线程进行。
+ * 快照观察和文档状态更新留在 UI 线程，避免后台创建快照触发选择工具栏状态重算，
+ * 与主线程对 selectable 列表的排序、注册和注销发生并发访问。
  * 更新比解析快时只解析最新的内容，中间的版本直接跳过。
  */
 @Composable
@@ -115,8 +117,11 @@ fun rememberMarkdownDocument(content: String, softBreakAsLineBreak: Boolean = tr
         snapshotFlow { currentContent }
             .conflate()
             .filter { it != state.value.source }
-            .mapNotNull { runCatching { parseMarkdown(it, softBreakAsLineBreak) }.getOrNull() }
-            .flowOn(Dispatchers.Default)
+            .mapNotNull { source ->
+                withContext(Dispatchers.Default) {
+                    runCatching { parseMarkdown(source, softBreakAsLineBreak) }.getOrNull()
+                }
+            }
             .collect { state.value = it }
     }
     return state.value

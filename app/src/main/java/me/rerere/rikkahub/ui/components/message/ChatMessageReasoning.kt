@@ -182,8 +182,8 @@ private fun ReasoningContent(
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        // 流式生成期间不启用 SelectionContainer，避免 selectable 列表并发修改导致的
-        // ConcurrentModificationException（详见 ChatMessage.kt 文本块同样处理）。
+        // 思考结束后即可选择，即使正文仍在生成。Markdown 的快照观察须留在 UI 线程，
+        // 避免选择工具栏在后台重算状态，与主线程对 selectable 列表的访问发生冲突。
         if (loading) {
             reasoningContent()
         } else {
