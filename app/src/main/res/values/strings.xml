@@ -1753,4 +1753,8 @@
   <string name="skill_detail_page_save_failed">Save failed</string>
   <string name="chat_page_compress_create_branch">Create new branch and compress</string>
   <string name="chat_page_compress_branch_desc">Keep the full history in this conversation. After compression succeeds, open a new branch with the summary followed by any recent messages you keep.</string>
+  <string name="setting_files_page_only_conversation_attachments">Only clean conversation attachments</string>
+  <string name="setting_files_page_conversation_cleanup_description">Keeps files used by avatars, backgrounds, assistant presets, and pending messages. Unreferenced files are also cleaned.</string>
+  <string name="setting_files_page_all_cleanup_warning">Files used by avatars, backgrounds, and other app settings may also be deleted.</string>
+  <string name="setting_files_page_cleanup_history_warning">Chat history is kept, but cleaned attachments will no longer be available.</string>
 </resources>

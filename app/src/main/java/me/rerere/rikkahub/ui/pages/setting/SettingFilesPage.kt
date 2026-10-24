@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -69,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Clean
 import me.rerere.hugeicons.stroke.Delete01
@@ -79,10 +81,12 @@ import me.rerere.hugeicons.stroke.FolderOpen
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.files.FileFolders
+import me.rerere.rikkahub.data.files.FileCleanupScope
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.ui.components.ai.ExtensionEmptyState
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.components.ui.switchItem
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.fileSizeToString
@@ -111,7 +115,25 @@ fun SettingFilesPage(
     var pendingDelete by remember { mutableStateOf<ManagedFileEntity?>(null) }
     var showCleanSheet by remember { mutableStateOf(false) }
     var selectedCleanRange by remember { mutableStateOf(CleanRange.DAYS_7) }
+    var onlyConversationAttachments by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
     val files by filesManager.observe(selectedFolder).collectAsState(initial = emptyList())
+
+    fun deleteFiles(successMessage: String, failureMessage: String, action: suspend () -> Boolean) {
+        if (isDeleting) return
+        isDeleting = true
+        scope.launch {
+            try {
+                toaster.show(if (action()) successMessage else failureMessage)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                toaster.show(failureMessage)
+            } finally {
+                isDeleting = false
+            }
+        }
+    }
 
     if (pendingDelete != null) {
         val target = pendingDelete!!
@@ -122,14 +144,9 @@ fun SettingFilesPage(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        scope.launch {
-                            val ok = filesManager.delete(target.id, deleteFromDisk = true)
-                            if (ok) {
-                                toaster.show(deletedToast)
-                            } else {
-                                toaster.show(deleteFailedToast)
-                            }
-                            pendingDelete = null
+                        pendingDelete = null
+                        deleteFiles(deletedToast, deleteFailedToast) {
+                            filesManager.delete(target.id, deleteFromDisk = true)
                         }
                     }
                 ) {
@@ -156,16 +173,25 @@ fun SettingFilesPage(
             CleanFilesSheet(
                 selectedRange = selectedCleanRange,
                 onRangeSelected = { selectedCleanRange = it },
+                onlyConversationAttachments = onlyConversationAttachments,
+                onOnlyConversationAttachmentsChanged = { onlyConversationAttachments = it },
                 onClean = {
                     showCleanSheet = false
-                    scope.launch {
-                        val ok = selectedCleanRange.days?.let { days ->
+                    val folder = selectedFolder
+                    val days = selectedCleanRange.days
+                    val cleanScope = if (onlyConversationAttachments) {
+                        FileCleanupScope.CONVERSATION_ATTACHMENTS
+                    } else {
+                        FileCleanupScope.ALL
+                    }
+                    deleteFiles(cleanedToast, cleanFailedToast) {
+                        days?.let {
                             filesManager.deleteOlderThan(
-                                folder = selectedFolder,
-                                cutoffMillis = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(days.toLong()),
+                                folder = folder,
+                                cutoffMillis = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(it.toLong()),
+                                scope = cleanScope,
                             )
-                        } ?: filesManager.deleteAll(selectedFolder)
-                        toaster.show(if (ok) cleanedToast else cleanFailedToast)
+                        } ?: filesManager.deleteAll(folder = folder, scope = cleanScope)
                     }
                 },
             )
@@ -180,7 +206,7 @@ fun SettingFilesPage(
                 actions = {
                     IconButton(
                         onClick = { showCleanSheet = true },
-                        enabled = files.isNotEmpty(),
+                        enabled = files.isNotEmpty() && !isDeleting,
                     ) {
                         Icon(
                             imageVector = HugeIcons.Clean,
@@ -234,7 +260,8 @@ fun SettingFilesPage(
                         FileItem(
                             file = file,
                             fileOnDisk = filesManager.getFile(file),
-                            onDelete = { pendingDelete = file }
+                            onDelete = { pendingDelete = file },
+                            deleteEnabled = !isDeleting,
                         )
                     }
                 }
@@ -243,7 +270,7 @@ fun SettingFilesPage(
     }
 }
 
-private enum class CleanRange(val days: Int?) {
+internal enum class CleanRange(val days: Int?) {
     DAYS_7(7),
     DAYS_14(14),
     DAYS_30(30),
@@ -251,14 +278,17 @@ private enum class CleanRange(val days: Int?) {
 }
 
 @Composable
-private fun CleanFilesSheet(
+internal fun CleanFilesSheet(
     selectedRange: CleanRange,
     onRangeSelected: (CleanRange) -> Unit,
+    onlyConversationAttachments: Boolean,
+    onOnlyConversationAttachmentsChanged: (Boolean) -> Unit,
     onClean: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .navigationBarsPadding()
             .padding(horizontal = 16.dp)
             .padding(bottom = 16.dp),
@@ -276,6 +306,17 @@ private fun CleanFilesSheet(
                 text = stringResource(R.string.setting_files_page_clean_range_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        CardGroup {
+            switchItem(
+                checked = onlyConversationAttachments,
+                onCheckedChange = onOnlyConversationAttachmentsChanged,
+                headlineContent = { Text(stringResource(R.string.setting_files_page_only_conversation_attachments)) },
+                supportingContent = {
+                    Text(stringResource(R.string.setting_files_page_conversation_cleanup_description))
+                },
             )
         }
 
@@ -299,6 +340,24 @@ private fun CleanFilesSheet(
                     leadingContent = { RadioButton(selected = selected, onClick = null) },
                 )
             }
+        }
+
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (!onlyConversationAttachments) {
+                Text(
+                    text = stringResource(R.string.setting_files_page_all_cleanup_warning),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Text(
+                text = stringResource(R.string.setting_files_page_cleanup_history_warning),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         Button(
@@ -370,6 +429,7 @@ private fun FileItem(
     file: ManagedFileEntity,
     fileOnDisk: File,
     onDelete: () -> Unit,
+    deleteEnabled: Boolean,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -420,6 +480,7 @@ private fun FileItem(
                 // 带底色的按钮，叠在图片上也看得清
                 FilledTonalIconButton(
                     onClick = onDelete,
+                    enabled = deleteEnabled,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(4.dp)

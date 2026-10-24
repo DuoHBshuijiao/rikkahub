@@ -1755,4 +1755,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="skill_detail_page_save_failed">保存失败</string>
   <string name="chat_page_compress_create_branch">创建新分支并压缩</string>
   <string name="chat_page_compress_branch_desc">保留当前会话的完整历史。压缩成功后创建并打开新分支，以总结开头，后接保留的最近消息。</string>
+  <string name="setting_files_page_only_conversation_attachments">仅清理会话附件</string>
+  <string name="setting_files_page_conversation_cleanup_description">保留头像、背景、助手预设消息及待发送消息使用的文件，同时清理无引用的旧文件。</string>
+  <string name="setting_files_page_all_cleanup_warning">头像、背景等应用配置正在使用的文件也可能被删除。</string>
+  <string name="setting_files_page_cleanup_history_warning">聊天记录会保留，已清理的附件将无法打开。</string>
 </resources>
