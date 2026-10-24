@@ -6,6 +6,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.net.toFile
 import androidx.core.net.toUri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -15,6 +16,8 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.repository.FilesRepository
 import me.rerere.rikkahub.utils.exportImage
@@ -31,10 +34,25 @@ class FilesManager(
     private val context: Context,
     private val repository: FilesRepository,
     private val appScope: AppScope,
+    settingsStore: SettingsStore,
+    messageNodeDAO: MessageNodeDAO,
+    runtimeFileReferences: RuntimeFileReferences,
 ) {
     companion object {
         private const val TAG = "FilesManager"
     }
+
+    private val paths = ManagedFilePaths(context.filesDir)
+    private val cleanup = ManagedFileCleanup(
+        repository = repository,
+        paths = paths,
+        usage = FileUsageChecker(
+            paths = paths,
+            settings = settingsStore::awaitLoaded,
+            findMessages = messageNodeDAO::findFileReferenceMessages,
+            runtime = runtimeFileReferences,
+        ),
+    )
 
     suspend fun saveManagedFromUri(
         folder: String,
@@ -226,29 +244,21 @@ class FilesManager(
         }
 
     fun deleteChatFiles(uris: List<Uri>) {
-        val relativePaths = mutableSetOf<String>()
-        uris.filter { it.toString().startsWith("file:") }.forEach { uri ->
-            val file = uri.toFile()
-            getRelativePathInFilesDir(file)?.let { relativePaths.add(it) }
-            if (file.exists()) {
-                file.delete()
-            }
-        }
-        if (relativePaths.isNotEmpty()) {
-            appScope.launch(Dispatchers.IO) {
-                relativePaths.forEach { path ->
-                    repository.deleteByPath(path)
-                }
+        val urls = uris.map { it.toString() }
+        appScope.launch(Dispatchers.IO) {
+            try {
+                cleanup.recycle(urls)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A failed reference check must never turn into permission to delete.
+                Log.w(TAG, "Could not verify file references; retaining files", e)
             }
         }
     }
 
     suspend fun countChatFiles(): Pair<Int, Long> = withContext(Dispatchers.IO) {
-        val dir = context.filesDir.resolve(FileFolders.UPLOAD)
-        if (!dir.exists()) {
-            return@withContext Pair(0, 0)
-        }
-        val files = dir.listFiles() ?: return@withContext Pair(0, 0)
+        val files = runCatching { paths.scanFolder(FileFolders.UPLOAD) }.getOrDefault(emptyList())
         val count = files.size
         val size = files.sumOf { it.length() }
         Pair(count, size)
@@ -348,19 +358,13 @@ class FilesManager(
     }
 
     suspend fun syncFolder(folder: String = FileFolders.UPLOAD): SyncResult = withContext(Dispatchers.IO) {
-        val dir = File(context.filesDir, folder)
-        val diskFiles = if (dir.exists()) {
-            dir.listFiles()?.filter { it.isFile }
-                ?: return@withContext SyncResult(inserted = 0, removed = 0)
-        } else {
-            emptyList()
-        }
+        val diskFiles = paths.scanFolder(folder)
 
         // 磁盘 -> 数据库：补录尚未登记的文件
         var inserted = 0
         val diskRelativePaths = HashSet<String>()
         diskFiles.forEach { file ->
-            val relativePath = "$folder/${file.name}"
+            val relativePath = requireNotNull(paths.relativePath(file.path))
             diskRelativePaths.add(relativePath)
             val existing = repository.getByPath(relativePath)
             if (existing == null) {
@@ -395,61 +399,22 @@ class FilesManager(
 
     suspend fun delete(id: Long, deleteFromDisk: Boolean = true): Boolean = withContext(Dispatchers.IO) {
         val entity = repository.getById(id) ?: return@withContext false
-        if (deleteFromDisk) {
-            runCatching { getFile(entity).delete() }
-        }
-        repository.deleteById(id) > 0
+        cleanup.delete(entity, deleteFromDisk)
     }
 
-    suspend fun deleteAll(folder: String = FileFolders.UPLOAD): Boolean = withContext(Dispatchers.IO) {
-        val dir = File(context.filesDir, folder)
-        val entries = dir.listFiles()
-        if (dir.exists() && entries == null) {
-            return@withContext false
-        }
-
-        var allDeletedFromDisk = true
-        entries.orEmpty().forEach { entry ->
-            if (!runCatching { entry.deleteRecursively() }.getOrDefault(false)) {
-                allDeletedFromDisk = false
-            }
-        }
-
-        if (allDeletedFromDisk) {
-            repository.deleteByFolder(folder)
-            return@withContext true
-        }
-
-        repository.listByFolder(folder).first().forEach { entity ->
-            if (!getFile(entity).exists()) {
-                repository.deleteById(entity.id)
-            }
-        }
-        false
+    suspend fun deleteAll(
+        folder: String = FileFolders.UPLOAD,
+        scope: FileCleanupScope = FileCleanupScope.ALL,
+    ): Boolean = withContext(Dispatchers.IO) {
+        cleanup.clean(folder, cutoffMillis = null, scope = scope) { syncFolder(folder) }
     }
 
     suspend fun deleteOlderThan(
         folder: String = FileFolders.UPLOAD,
         cutoffMillis: Long,
+        scope: FileCleanupScope = FileCleanupScope.ALL,
     ): Boolean = withContext(Dispatchers.IO) {
-        var allDeleted = true
-        repository.listByFolder(folder).first()
-            .filter { it.createdAt < cutoffMillis }
-            .forEach { entity ->
-                val file = getFile(entity)
-                val deletedFromDisk = !file.exists() || runCatching {
-                    file.deleteRecursively()
-                }.getOrDefault(false)
-
-                if (deletedFromDisk) {
-                    if (repository.deleteById(entity.id) == 0) {
-                        allDeleted = false
-                    }
-                } else {
-                    allDeleted = false
-                }
-            }
-        allDeleted
+        cleanup.clean(folder, cutoffMillis, scope) { syncFolder(folder) }
     }
 
     private fun createTargetFile(folder: String, displayName: String, mimeType: String?): File {
@@ -487,6 +452,7 @@ class FilesManager(
         val relativePath = buildRelativePath(folder, file)
         appScope.launch(Dispatchers.IO) {
             runCatching {
+                if (!file.isFile) return@runCatching
                 val existing = repository.getByPath(relativePath)
                 if (existing != null) {
                     return@runCatching
@@ -515,9 +481,6 @@ class FilesManager(
 
     private fun buildRelativePath(folder: String, file: File): String =
         FileUtils.buildRelativePath(folder, file)
-
-    private fun getRelativePathInFilesDir(file: File): String? =
-        FileUtils.getRelativePathInFilesDir(context.filesDir, file)
 
     fun getFileNameFromUri(uri: Uri): String? =
         FileUtils.getFileNameFromUri(context, uri)

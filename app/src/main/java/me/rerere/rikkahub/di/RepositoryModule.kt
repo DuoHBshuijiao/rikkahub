@@ -3,6 +3,7 @@ package me.rerere.rikkahub.di
 import android.content.Context
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.files.RuntimeFileReferences
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FavoriteRepository
 import me.rerere.rikkahub.data.repository.FilesRepository
@@ -24,7 +25,7 @@ import java.io.File
 
 val repositoryModule = module {
     single {
-        ConversationRepository(get(), get(), get(), get(), get(), get())
+        ConversationRepository(get(), get(), get(), get(), get())
     }
 
     single {
@@ -98,7 +99,11 @@ val repositoryModule = module {
     }
 
     single {
-        FilesManager(get(), get(), get())
+        RuntimeFileReferences()
+    }
+
+    single {
+        FilesManager(get(), get(), get(), get(), get(), get())
     }
 
     single {

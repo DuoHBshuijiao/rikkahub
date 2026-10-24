@@ -238,13 +238,13 @@ internal fun List<UIMessagePart>.localFileUrls(): Set<String> = buildSet {
 
             else -> null
         }
-        if (url?.startsWith("file://") == true) add(url)
+        if (url != null && (url.startsWith("file:") || java.io.File(url).isAbsolute)) add(url)
     }
 }
 
 /** 替换本地附件的地址，覆盖范围与 [localFileUrls] 一致，包含工具结果中的嵌套附件。 */
 internal fun UIMessagePart.mapLocalFileUrls(transform: (String) -> String): UIMessagePart {
-    fun String.mapped() = if (startsWith("file://")) transform(this) else this
+    fun String.mapped() = if (startsWith("file:") || java.io.File(this).isAbsolute) transform(this) else this
     return when (this) {
         is UIMessagePart.Image -> copy(url = url.mapped())
         is UIMessagePart.Document -> copy(url = url.mapped())

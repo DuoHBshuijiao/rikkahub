@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.repository
 
 import android.database.sqlite.SQLiteBlobTooBigException
+import android.net.Uri
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
@@ -27,7 +28,6 @@ import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 import me.rerere.rikkahub.data.db.fts.MessageFtsManager
 import me.rerere.rikkahub.data.db.fts.MessageSearchSort
-import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.MessageSearchHit
@@ -41,7 +41,6 @@ class ConversationRepository(
     private val messageNodeDAO: MessageNodeDAO,
     private val favoriteDAO: FavoriteDAO,
     private val database: AppDatabase,
-    private val filesManager: FilesManager,
     private val messageFtsManager: MessageFtsManager,
 ) {
     companion object {
@@ -345,7 +344,7 @@ class ConversationRepository(
         messageFtsManager.indexConversation(conversation)
     }
 
-    suspend fun deleteConversation(conversation: Conversation) {
+    suspend fun deleteConversation(conversation: Conversation): List<Uri> {
         // 获取完整的 Conversation（包含 messageNodes）以正确清理文件
         val fullConversation = if (conversation.messageNodes.isEmpty()) {
             getConversationById(conversation.id) ?: conversation
@@ -359,7 +358,7 @@ class ConversationRepository(
             )
         }
         messageFtsManager.deleteConversation(conversation.id.toString())
-        filesManager.deleteChatFiles(fullConversation.files)
+        return fullConversation.files
     }
 
     suspend fun searchMessages(

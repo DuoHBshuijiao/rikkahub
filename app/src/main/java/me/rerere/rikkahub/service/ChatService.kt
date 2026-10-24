@@ -56,6 +56,8 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.files.RuntimeFileReferences
+import me.rerere.rikkahub.data.files.RuntimeFileUsage
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
@@ -126,6 +128,7 @@ class ChatService(
     val mcpManager: McpManager,
     private val filesManager: FilesManager,
     private val folderRepository: FolderRepository,
+    runtimeFileReferences: RuntimeFileReferences,
 ) {
     /** 一轮生成的结果 */
     private sealed interface TurnResult {
@@ -164,6 +167,23 @@ class ChatService(
         onSessionRemoved = memoryConsolidationScheduler::onConversationLeft,
     )
 
+    private val releaseFileReferences = runtimeFileReferences.register {
+        val sessions = sessionManager.snapshot()
+        val referenced = mutableSetOf<String>()
+        val inUse = mutableSetOf<String>()
+        sessions.forEach { session ->
+            val conversation = session.state.value
+            val files = conversation.messageNodes.flatMap { it.messages }.flatMap { it.parts }.localFileUrls()
+            referenced.addAll(files)
+            if (session.getJob() != null || conversation.isAwaitingToolApproval) inUse.addAll(files)
+            val pending = (session.messageQueue.state.value.messages + listOfNotNull(session.submittingMessage))
+                .flatMap { it.parts }.localFileUrls()
+            referenced.addAll(pending)
+            inUse.addAll(pending)
+        }
+        RuntimeFileUsage(referenced, inUse)
+    }
+
     // 错误状态
     private val _errors = MutableStateFlow<List<ChatError>>(emptyList())
     val errors: StateFlow<List<ChatError>> = _errors.asStateFlow()
@@ -192,7 +212,10 @@ class ChatService(
     private val _generationDoneFlow = MutableSharedFlow<Uuid>()
     val generationDoneFlow: SharedFlow<Uuid> = _generationDoneFlow.asSharedFlow()
 
-    fun cleanup() = runCatching { sessionManager.cleanup() }
+    fun cleanup() = runCatching {
+        sessionManager.cleanup()
+        releaseFileReferences()
+    }
 
     private fun onSessionGenerationFinished(session: ConversationSession, cause: Throwable?) {
         if (cause != null) session.messageQueue.pause()
@@ -977,35 +1000,8 @@ class ChatService(
 
     private fun cleanupUserPersonaAvatars(previous: Settings) {
         val candidates = previous.userPersonas.mapNotNull { (it.avatar as? Avatar.Image)?.url }.toSet()
-        appScope.launch(Dispatchers.IO) {
-            try {
-                for (url in candidates) {
-                    if (!url.startsWith("file:")) continue
-                    if (conversationRepo.hasFileReference(url)) continue
-                    val sessions = sessionManager.snapshot()
-                    if (sessions.any { session ->
-                            url in session.state.value.localPersonaAttachmentReferences() ||
-                                (session.messageQueue.state.value.messages + listOfNotNull(session.submittingMessage))
-                                    .any { url in it.parts.localFileUrls() }
-                        }) {
-                        continue
-                    }
-                    // Check all settings resources, including avatars shared with assistants and legacy settings.
-                    if (JsonInstant.encodeToString(settingsStore.settingsFlow.value)
-                            .contains(JsonInstant.encodeToString(url))) {
-                        continue
-                    }
-                    filesManager.deleteChatFiles(listOf(url.toUri()))
-                }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                Log.w(TAG, "Could not verify persona avatar references; retaining files", e)
-            }
-        }
+        filesManager.deleteChatFiles(candidates.map { it.toUri() })
     }
-
-    private fun Conversation.localPersonaAttachmentReferences(): Set<String> =
-        messageNodes.flatMap { it.messages }.flatMap { it.parts }.localFileUrls()
 
     /**
      * 聊天页对助手的修改：会话持有的字段只改当前会话，其余写回助手设置。
@@ -1224,11 +1220,16 @@ class ChatService(
     suspend fun deleteConversation(conversationId: Uuid) {
         val session = sessionManager.getOrCreate(conversationId)
         discardQueuedMessages(session)
+        val deletedFiles = mutableSetOf<Uri>()
         session.replace(newConversation(conversationId), existsInDatabase = false) { previous ->
-            conversationRepo.getConversationById(conversationId)?.let { conversationRepo.deleteConversation(it) }
+            conversationRepo.getConversationById(conversationId)?.let {
+                deletedFiles.addAll(conversationRepo.deleteConversation(it))
+            }
             // 数据库那份不知道只在内存里出现过的附件
-            previous?.let { filesManager.deleteChatFiles(it.files) }
+            previous?.let { deletedFiles.addAll(it.files) }
         }
+        // The old runtime state must no longer count as a live reference when recycling starts.
+        filesManager.deleteChatFiles(deletedFiles.toList())
         sessionManager.removeIfIdle(session)
     }
 

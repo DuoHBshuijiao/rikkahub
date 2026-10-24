@@ -35,6 +35,9 @@ import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.files.RuntimeFileReferences
+import me.rerere.rikkahub.data.files.RuntimeFileUsage
+import me.rerere.rikkahub.data.model.localFileUrls
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.UserPersona
@@ -72,6 +75,7 @@ class ChatVM(
     private val analytics: FirebaseAnalytics,
     private val favoriteRepository: FavoriteRepository,
     savedStateHandle: SavedStateHandle,
+    runtimeFileReferences: RuntimeFileReferences,
 ) : ViewModel() {
     val askUserDraftStore = AskUserDraftStore(id, savedStateHandle)
     private val _conversationId: Uuid = Uuid.parse(id)
@@ -86,6 +90,9 @@ class ChatVM(
 
     // 聊天输入状态 - 保存在 ViewModel 中避免 TransactionTooLargeException
     val inputState = ChatInputState()
+    private val releaseFileReferences = runtimeFileReferences.register {
+        RuntimeFileUsage(inputState.messageContent.localFileUrls())
+    }
 
     val voiceSession = VoiceSessionController(viewModelScope, context::getString) {
         chatService.enqueueVoiceMessage(_conversationId, it)
@@ -120,6 +127,7 @@ class ChatVM(
     }
 
     override fun onCleared() {
+        releaseFileReferences()
         voiceSession.stop()
         super.onCleared()
         // 移除对话引用

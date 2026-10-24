@@ -39,11 +39,12 @@ class AssistantVM(
 
     fun removeAssistant(assistant: Assistant) {
         viewModelScope.launch {
-            cleanupAssistantFiles(assistant)
-
+            var removed: Assistant? = null
             settingsStore.update { settings ->
+                removed = settings.assistants.find { it.id == assistant.id }
                 settings.copy(assistants = settings.assistants.filter { it.id != assistant.id })
             }
+            removed?.let(::cleanupAssistantFiles)
             memoryRepository.deleteFilesOfAssistant(assistant.id.toString())
             chatService.deleteConversationsOfAssistant(assistant.id)
         }
@@ -65,7 +66,7 @@ class AssistantVM(
             val copiedAssistant = assistant.copy(
                 id = kotlin.uuid.Uuid.random(),
                 name = "${assistant.name} (Clone)",
-                avatar = if(assistant.avatar is Avatar.Image) Avatar.Dummy else assistant.avatar,
+                avatar = if (assistant.avatar is Avatar.Image) Avatar.Dummy else assistant.avatar,
             )
             settingsStore.update { it.copy(assistants = it.assistants.plus(copiedAssistant)) }
             if (copyMemories) {
