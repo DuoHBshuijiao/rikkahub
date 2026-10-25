@@ -17,8 +17,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.SegmentedListItem
-import androidx.compose.material3.Text
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -43,13 +43,13 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Copy01
+import me.rerere.hugeicons.stroke.CursorPointer01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Edit01
 import me.rerere.hugeicons.stroke.FavouriteCircle
 import me.rerere.hugeicons.stroke.GitFork
 import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.hugeicons.stroke.Refresh03
-import me.rerere.hugeicons.stroke.Share04
 import me.rerere.hugeicons.stroke.StopCircle
 import me.rerere.hugeicons.stroke.TextSelection
 import me.rerere.hugeicons.stroke.Translate
@@ -281,15 +281,18 @@ fun ChatMessageActionsSheet(
                 add(MessageSheetAction(HugeIcons.WebDesign01, stringResource(R.string.render_with_webview), onClick = onWebViewPreview))
             }
             add(MessageSheetAction(HugeIcons.Edit01, stringResource(R.string.edit), onClick = onEdit))
-            add(MessageSheetAction(HugeIcons.Share04, stringResource(R.string.share), onClick = onShare))
+            add(MessageSheetAction(HugeIcons.CursorPointer01, "多选", onClick = onShare))
             add(MessageSheetAction(HugeIcons.GitFork, stringResource(R.string.create_fork), onClick = onFork))
             if (onToggleFavorite != null) {
                 add(
                     MessageSheetAction(
                         icon = HugeIcons.FavouriteCircle,
                         label = stringResource(
-                            if (isFavorite) R.string.chat_message_remove_favorite
-                            else R.string.chat_message_add_favorite
+                            if (isFavorite) {
+                                R.string.chat_message_remove_favorite
+                            } else {
+                                R.string.chat_message_add_favorite
+                            }
                         ),
                         onClick = onToggleFavorite,
                     )

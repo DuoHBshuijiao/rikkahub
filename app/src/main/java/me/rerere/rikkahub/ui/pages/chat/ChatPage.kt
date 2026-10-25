@@ -1,8 +1,5 @@
 package me.rerere.rikkahub.ui.pages.chat
 
-import androidx.compose.runtime.CompositionLocalProvider
-import me.rerere.rikkahub.ui.components.message.LocalAskUserDraftStore
-
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -33,6 +30,7 @@ import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,9 +47,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -83,6 +81,7 @@ import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.SearchMode
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
 import me.rerere.rikkahub.ui.components.ai.rememberChatAttachmentPickerActions
+import me.rerere.rikkahub.ui.components.message.LocalAskUserDraftStore
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
@@ -321,14 +320,32 @@ private fun ChatPageContent(
     val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
 
-    var previewMode by rememberSaveable { mutableStateOf(false) }
+    var previewMode by rememberSaveable(conversation.id) { mutableStateOf(false) }
+    var selection by rememberSaveable(conversation.id, stateSaver = MessageSelection.StateSaver) {
+        mutableStateOf(MessageSelection())
+    }
+    var showSelectionExport by rememberSaveable(conversation.id) { mutableStateOf(false) }
+    var returnIndex by rememberSaveable(conversation.id) { mutableStateOf(0) }
+    var returnOffset by rememberSaveable(conversation.id) { mutableStateOf(0) }
+    var returnNodeId by rememberSaveable(conversation.id) { mutableStateOf<String?>(null) }
+    fun exitSelection() {
+        if (!previewMode) {
+            val index = conversation.messageNodes.indexOfFirst { it.id.toString() == returnNodeId }
+                .takeIf { it >= 0 } ?: returnIndex.coerceAtMost(conversation.messageNodes.lastIndex.coerceAtLeast(0))
+            chatListState.requestScrollToItem(index, returnOffset)
+        }
+        selection = MessageSelection()
+    }
+    val nodeIds = remember(conversation.messageNodes) { conversation.messageNodes.map { it.id }.toSet() }
+    LaunchedEffect(nodeIds) { selection = selection.reconcile(nodeIds) }
+    BackHandler(enabled = selection.active && !showSelectionExport, onBack = ::exitSelection)
     var searchJumpJob by remember { mutableStateOf<Job?>(null) }
     val searchKeyboard = LocalSoftwareKeyboardController.current
     val searchFocus = LocalFocusManager.current
     LaunchedEffect(vm.activeSearchTarget?.requestId) {
         if (vm.activeSearchTarget != null) previewMode = false
     }
-    BackHandler(enabled = previewMode || (vm.activeSearchTarget != null && !vm.searchReturnToGlobal)) {
+    BackHandler(enabled = !selection.active && (previewMode || (vm.activeSearchTarget != null && !vm.searchReturnToGlobal))) {
         if (previewMode) {
             previewMode = false
             vm.activeSearchTarget = null
@@ -368,86 +385,104 @@ private fun ChatPageContent(
         AssistantBackground(setting = setting, modifier = Modifier.hazeSource(hazeState))
         Scaffold(
             topBar = {
-                TopBar(
-                    settings = setting,
-                    assistant = assistant,
-                    chatModel = currentChatModel,
-                    conversation = conversation,
-                    bigScreen = bigScreen,
-                    drawerState = drawerState,
-                    previewMode = previewMode,
-                    onNewChat = {
-                        navigateToChatPage(navController)
-                    },
-                    onClickMenu = {
-                        previewMode = !previewMode
-                    },
-                    onUpdateTitle = {
-                        vm.updateTitle(it)
-                    }
-                )
+                if (selection.active) {
+                    MessageSelectionTopBar(
+                        selection = selection,
+                        total = conversation.messageNodes.size,
+                        onChange = { selection = it },
+                        onExit = ::exitSelection,
+                    )
+                } else {
+                    TopBar(
+                        settings = setting,
+                        assistant = assistant,
+                        chatModel = currentChatModel,
+                        conversation = conversation,
+                        bigScreen = bigScreen,
+                        drawerState = drawerState,
+                        previewMode = previewMode,
+                        onNewChat = {
+                            navigateToChatPage(navController)
+                        },
+                        onClickMenu = {
+                            previewMode = !previewMode
+                        },
+                        onUpdateTitle = {
+                            vm.updateTitle(it)
+                        }
+                    )
+                }
             },
             bottomBar = {
-                val messageQueue by vm.messageQueue.collectAsStateWithLifecycle()
-                val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
-                ChatInput(
-                    onStartVoiceMode = onStartVoiceMode,
-                    voiceState = voiceState,
-                    onStopVoiceMode = vm.voiceSession::stop,
-                    state = inputState,
-                    messageQueue = messageQueue,
-                    onRemoveQueuedMessage = vm::removeQueuedMessage,
-                    onBeginEditQueuedMessage = vm::beginEditQueuedMessage,
-                    onFinishEditQueuedMessage = vm::finishEditQueuedMessage,
-                    onResumeMessageQueue = vm::resumeMessageQueue,
-                    loading = loadingJob != null,
-                    settings = setting,
-                    assistant = assistant,
-                    chatModel = currentChatModel,
-                    hazeState = hazeState,
-                    completionProviders = completionProviders,
-                    onCancelClick = {
-                        vm.stopGeneration()
-                    },
-                    onSendClick = {
-                        if (currentChatModel == null) {
-                            toaster.show("请先选择模型", type = ToastType.Error)
-                            return@ChatInput
-                        }
-                        if (inputState.isEditing()) {
-                            vm.handleMessageEdit(
-                                parts = inputState.getContents(),
-                                messageId = inputState.editingMessage!!,
-                            )
-                        } else {
-                            vm.handleMessageSend(inputState.getContents())
-                            scope.launch {
-                                delay(100.milliseconds)
-                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
+                if (selection.active) {
+                    MessageSelectionToolbar(
+                        selection = selection,
+                        conversation = conversation,
+                        onChange = { selection = it },
+                        onExport = { showSelectionExport = true },
+                    )
+                } else {
+                    val messageQueue by vm.messageQueue.collectAsStateWithLifecycle()
+                    val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
+                    ChatInput(
+                        onStartVoiceMode = onStartVoiceMode,
+                        voiceState = voiceState,
+                        onStopVoiceMode = vm.voiceSession::stop,
+                        state = inputState,
+                        messageQueue = messageQueue,
+                        onRemoveQueuedMessage = vm::removeQueuedMessage,
+                        onBeginEditQueuedMessage = vm::beginEditQueuedMessage,
+                        onFinishEditQueuedMessage = vm::finishEditQueuedMessage,
+                        onResumeMessageQueue = vm::resumeMessageQueue,
+                        loading = loadingJob != null,
+                        settings = setting,
+                        assistant = assistant,
+                        chatModel = currentChatModel,
+                        hazeState = hazeState,
+                        completionProviders = completionProviders,
+                        onCancelClick = {
+                            vm.stopGeneration()
+                        },
+                        onSendClick = {
+                            if (currentChatModel == null) {
+                                toaster.show("请先选择模型", type = ToastType.Error)
+                                return@ChatInput
                             }
-                        }
-                        inputState.clearInput()
-                    },
-                    onLongSendClick = {
-                        if (inputState.isEditing()) {
-                            vm.handleMessageEdit(
-                                parts = inputState.getContents(),
-                                messageId = inputState.editingMessage!!,
-                            )
-                        } else {
-                            vm.handleMessageSend(content = inputState.getContents(), answer = false)
-                            scope.launch {
-                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
+                            if (inputState.isEditing()) {
+                                vm.handleMessageEdit(
+                                    parts = inputState.getContents(),
+                                    messageId = inputState.editingMessage!!,
+                                )
+                            } else {
+                                vm.handleMessageSend(inputState.getContents())
+                                scope.launch {
+                                    delay(100.milliseconds)
+                                    chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
+                                }
                             }
-                        }
-                        inputState.clearInput()
-                    },
-                    onUpdateChatModel = vm::setChatModel,
-                    onUpdateAssistant = vm::updateAssistant,
-                    onMoreClick = {
-                        showFilesSheet = true
-                    },
-                )
+                            inputState.clearInput()
+                        },
+                        onLongSendClick = {
+                            if (inputState.isEditing()) {
+                                vm.handleMessageEdit(
+                                    parts = inputState.getContents(),
+                                    messageId = inputState.editingMessage!!,
+                                )
+                            } else {
+                                vm.handleMessageSend(content = inputState.getContents(), answer = false)
+                                scope.launch {
+                                    chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
+                                }
+                            }
+                            inputState.clearInput()
+                        },
+                        onUpdateChatModel = vm::setChatModel,
+                        onUpdateAssistant = vm::updateAssistant,
+                        onMoreClick = {
+                            showFilesSheet = true
+                        },
+                    )
+                }
             },
             containerColor = Color.Transparent,
         ) { innerPadding ->
@@ -458,6 +493,16 @@ private fun ChatPageContent(
                 loading = loadingJob != null,
                 processingStatus = processingStatus,
                 previewMode = previewMode,
+                selection = selection,
+                onSelectionChange = { selection = it },
+                onSelectMessage = { id ->
+                    returnIndex = chatListState.firstVisibleItemIndex
+                    returnOffset = chatListState.firstVisibleItemScrollOffset
+                    returnNodeId = conversation.messageNodes.getOrNull(returnIndex)?.id?.toString()
+                    searchFocus.clearFocus()
+                    searchKeyboard?.hide()
+                    selection = MessageSelection.begin(id)
+                },
                 settings = setting,
                 hazeState = hazeState,
                 searchQuery = vm.conversationSearchQuery,
@@ -541,6 +586,17 @@ private fun ChatPageContent(
                 },
             )
         }
+
+        ChatExportSheet(
+            visible = showSelectionExport,
+            onDismissRequest = { showSelectionExport = false },
+            onExportComplete = {
+                showSelectionExport = false
+                exitSelection()
+            },
+            conversation = conversation,
+            selectedMessages = selection.selectedMessages(conversation.messageNodes),
+        )
 
         if (showFilesSheet) {
             ChatFilesPickerSheet(

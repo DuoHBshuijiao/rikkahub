@@ -8,12 +8,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,8 +37,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ContainedLoadingIndicator
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -52,7 +49,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -76,11 +72,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalScrollCaptureInProgress
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceAtLeast
@@ -101,9 +93,7 @@ import me.rerere.hugeicons.stroke.ArrowDownDouble
 import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.ArrowUpDouble
 import me.rerere.hugeicons.stroke.Cancel01
-import me.rerere.hugeicons.stroke.CursorPointer01
 import me.rerere.hugeicons.stroke.Search01
-import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getAssistantById
@@ -122,8 +112,6 @@ import me.rerere.rikkahub.ui.components.ui.SearchSnippetText
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
 import me.rerere.rikkahub.ui.theme.ChatFontProvider
 import me.rerere.rikkahub.utils.plus
-import me.rerere.ui.components.ListSelectableItem
-import me.rerere.ui.components.Tooltip
 import kotlin.math.roundToInt
 import kotlin.uuid.Uuid
 
@@ -139,6 +127,9 @@ fun ChatList(
     loading: Boolean,
     processingStatus: String? = null,
     previewMode: Boolean,
+    selection: MessageSelection,
+    onSelectionChange: (MessageSelection) -> Unit,
+    onSelectMessage: (Uuid) -> Unit,
     settings: Settings,
     hazeState: HazeState,
     errors: List<ChatError> = emptyList(),
@@ -199,13 +190,26 @@ fun ChatList(
         }
     }
     AnimatedContent(
-        targetState = previewMode,
+        targetState = if (selection.active) {
+            2
+        } else if (previewMode) {
+            1
+        } else {
+            0
+        },
         label = "ChatListMode",
         transitionSpec = {
             (fadeIn() + scaleIn(initialScale = 0.8f) togetherWith fadeOut() + scaleOut(targetScale = 0.8f))
         }
     ) { target ->
-        if (target) {
+        if (target == 2) {
+            MessageSelectionList(
+                conversation = conversation,
+                selection = selection,
+                onSelectionChange = onSelectionChange,
+                innerPadding = innerPadding,
+            )
+        } else if (target == 1) {
             ChatListPreview(
                 searchQuery = searchQuery,
                 onSearchQueryChange = onSearchQueryChange,
@@ -218,6 +222,7 @@ fun ChatList(
                 hazeState = hazeState,
                 onJumpToMessage = onJumpToMessage,
                 animatedVisibilityScope = this@AnimatedContent,
+                onSelectMessage = onSelectMessage,
             )
         } else {
             ChatListNormal(
@@ -248,6 +253,8 @@ fun ChatList(
                 onToolAnswer = onToolAnswer,
                 onToggleFavorite = onToggleFavorite,
                 onConversationSystemPromptChange = onConversationSystemPromptChange,
+                onSelectMessage = onSelectMessage,
+                autoScroll = !selection.active,
             )
         }
     }
@@ -301,6 +308,8 @@ private fun ChatListNormal(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
+    onSelectMessage: (Uuid) -> Unit,
+    autoScroll: Boolean,
 ) {
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
@@ -347,11 +356,6 @@ private fun ChatListNormal(
         return lastPos <= inputPos - 8
     }
 
-    // 聊天选择
-    val selectedItems = remember { mutableStateListOf<Uuid>() }
-    var selecting by remember { mutableStateOf(false) }
-    var showExportSheet by remember { mutableStateOf(false) }
-
     // 自动跟随键盘滚动
     ImeLazyListAutoScroller(lazyListState = state)
 
@@ -377,7 +381,7 @@ private fun ChatListNormal(
             .fillMaxSize(),
     ) {
         // 自动滚动到底部
-        if (settings.displaySetting.enableAutoScroll && searchTarget == null) {
+        if (autoScroll && settings.displaySetting.enableAutoScroll && searchTarget == null) {
             LaunchedEffect(state) {
                 snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect { visibleItemsInfo ->
                     // println("is bottom = ${visibleItemsInfo.isAtBottom()}, scroll = ${state.isScrollInProgress}, can_scroll = ${state.canScrollForward}, loading = $loading")
@@ -424,62 +428,42 @@ private fun ChatListNormal(
                     key = { index, item -> item.id },
                 ) { index, node ->
                     Column {
-                        ListSelectableItem(
-                            key = node.id,
-                            onSelectChange = {
-                                if (!selectedItems.contains(node.id)) {
-                                    selectedItems.add(node.id)
-                                } else {
-                                    selectedItems.remove(node.id)
-                                }
+                        ChatMessage(
+                            searchTarget = searchTarget?.takeIf { it.nodeId == node.id.toString() },
+                            onSearchPosition = { searchGeometry.match = it },
+                            node = node,
+                            model = node.currentMessage.modelId?.let(modelById::get)
+                                ?: node.currentMessage.snapshotModel(),
+                            assistant = assistant,
+                            userPersona = settings.getUserPersonaOf(conversation),
+                            loading = loading && index == lastMessageIndex,
+                            onRegenerate = {
+                                onRegenerate(node.currentMessage)
                             },
-                            selectedKeys = selectedItems,
-                            enabled = selecting,
-                        ) {
-                            ChatMessage(
-                                searchTarget = searchTarget?.takeIf { it.nodeId == node.id.toString() },
-                                onSearchPosition = { searchGeometry.match = it },
-                                node = node,
-                                model = node.currentMessage.modelId?.let(modelById::get)
-                                    ?: node.currentMessage.snapshotModel(),
-                                assistant = assistant,
-                                userPersona = settings.getUserPersonaOf(conversation),
-                                loading = loading && index == lastMessageIndex,
-                                onRegenerate = {
-                                    onRegenerate(node.currentMessage)
-                                },
-                                onEdit = {
-                                    onEdit(node.currentMessage)
-                                },
-                                onFork = {
-                                    onForkMessage(node.currentMessage)
-                                },
-                                onDelete = {
-                                    onDelete(node.currentMessage)
-                                },
-                                onShare = {
-                                    selecting = true // 使用 CoroutineScope 延迟状态更新
-                                    selectedItems.clear()
-                                    selectedItems.addAll(
-                                        conversation.messageNodes.map { it.id }
-                                            .subList(0, conversation.messageNodes.indexOf(node) + 1)
-                                    )
-                                },
-                                onUpdate = {
-                                    onUpdateMessage(it)
-                                },
-                                isFavorite = node.isFavorite,
-                                onToggleFavorite = {
-                                    onToggleFavorite?.invoke(node)
-                                },
-                                onTranslate = onTranslate,
-                                onClearTranslation = onClearTranslation,
-                                onToolApproval = onToolApproval,
-                                onToolAnswer = onToolAnswer,
-                                lastMessage = index == lastMessageIndex,
-                                firstMessage = index == 0,
-                            )
-                        }
+                            onEdit = {
+                                onEdit(node.currentMessage)
+                            },
+                            onFork = {
+                                onForkMessage(node.currentMessage)
+                            },
+                            onDelete = {
+                                onDelete(node.currentMessage)
+                            },
+                            onShare = { onSelectMessage(node.id) },
+                            onUpdate = {
+                                onUpdateMessage(it)
+                            },
+                            isFavorite = node.isFavorite,
+                            onToggleFavorite = {
+                                onToggleFavorite?.invoke(node)
+                            },
+                            onTranslate = onTranslate,
+                            onClearTranslation = onClearTranslation,
+                            onToolApproval = onToolApproval,
+                            onToolAnswer = onToolAnswer,
+                            lastMessage = index == lastMessageIndex,
+                            firstMessage = index == 0,
+                        )
                     }
                 }
 
@@ -564,85 +548,6 @@ private fun ChatListNormal(
                     .zIndex(5f)
             )
 
-            // 完成选择
-            AnimatedVisibility(
-                visible = selecting,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .offset(y = -(48).dp),
-                enter = slideInVertically(
-                    initialOffsetY = { it * 2 },
-                ),
-                exit = slideOutVertically(
-                    targetOffsetY = { it * 2 },
-                ),
-            ) {
-                HorizontalFloatingToolbar(
-                    expanded = true,
-                ) {
-                    Tooltip(
-                        tooltip = {
-                            Text("Clear selection")
-                        }
-                    ) {
-                        IconButton(
-                            onClick = {
-                                selecting = false
-                                selectedItems.clear()
-                            }
-                        ) {
-                            Icon(HugeIcons.Cancel01, null)
-                        }
-                    }
-                    Tooltip(
-                        tooltip = {
-                            Text("Select all")
-                        }
-                    ) {
-                        IconButton(
-                            onClick = {
-                                if (selectedItems.isNotEmpty()) {
-                                    selectedItems.clear()
-                                } else {
-                                    selectedItems.addAll(conversation.messageNodes.map { it.id })
-                                }
-                            }
-                        ) {
-                            Icon(HugeIcons.CursorPointer01, null)
-                        }
-                    }
-                    Tooltip(
-                        tooltip = {
-                            Text("Confirm")
-                        }
-                    ) {
-                        FilledIconButton(
-                            onClick = {
-                                selecting = false
-                                val messages = conversation.messageNodes.filter { it.id in selectedItems }
-                                if (messages.isNotEmpty()) {
-                                    showExportSheet = true
-                                }
-                            }
-                        ) {
-                            Icon(HugeIcons.Tick01, null)
-                        }
-                    }
-                }
-            }
-
-            // 导出对话框
-            ChatExportSheet(
-                visible = showExportSheet,
-                onDismissRequest = {
-                    showExportSheet = false
-                    selectedItems.clear()
-                },
-                conversation = conversation,
-                selectedMessages = conversation.messageNodes.filter { it.id in selectedItems }
-                    .map { it.currentMessage }
-            )
-
             val captureProgress = LocalScrollCaptureInProgress.current
 
             // 消息快速跳转
@@ -677,6 +582,7 @@ private data class ConversationPreviewResults(
 
 @Composable
 private fun ChatListPreview(
+    onSelectMessage: (Uuid) -> Unit,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     results: ConversationPreviewResults,
@@ -771,15 +677,23 @@ private fun ChatListPreview(
                     ) {
                         Row(
                             modifier = Modifier
-                                .clickable(enabled = !results.searching) {
-                                    val hit = item.hit
-                                    if (hit ==
-                                        null) {
-                                        onJumpToMessage(item.originalIndex)
-                                    } else {
-                                        onJumpToSearchHit(hit.target)
-                                    }
-                                }
+                                .combinedClickable(
+                                    enabled = !results.searching,
+                                    onLongClickLabel = "多选",
+                                    onLongClick = {
+                                        conversation.messageNodes.firstOrNull { it.currentMessage.id == item.message.id }
+                                            ?.let { onSelectMessage(it.id) }
+                                    },
+                                    onClick = {
+                                        val hit = item.hit
+                                        if (hit ==
+                                            null) {
+                                            onJumpToMessage(item.originalIndex)
+                                        } else {
+                                            onJumpToSearchHit(hit.target)
+                                        }
+                                    },
+                                )
                                 .padding(horizontal = 12.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
