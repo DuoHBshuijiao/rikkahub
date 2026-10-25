@@ -41,7 +41,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,7 +83,7 @@ fun SettingMediaProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val navController = LocalNavController.current
     val provider = settings.mediaGenerationProviders.find { it.id == id } ?: return
     val toaster = LocalToaster.current
-    val context = LocalContext.current
+    val saveSuccessMessage = stringResource(R.string.setting_provider_page_save_success)
     val pager = rememberPagerState { MediaProviderDetailTab.entries.size }
     // 草稿放在页面这一层，各分页共用，切换分页不会丢掉没保存的修改；点保存才写回设置
     var draft by remember { mutableStateOf(provider) }
@@ -103,7 +102,7 @@ fun SettingMediaProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
         }
         draft = saved
         toaster.show(
-            context.getString(R.string.setting_provider_page_save_success),
+            saveSuccessMessage,
             type = ToastType.Success
         )
     }
