@@ -26,6 +26,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -87,8 +88,6 @@ import me.rerere.hugeicons.stroke.Share03
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.export.LorebookSerializer
 import me.rerere.rikkahub.data.export.ModeInjectionSerializer
-import me.rerere.rikkahub.ui.hooks.rememberExporter
-import me.rerere.rikkahub.ui.hooks.rememberImporter
 import me.rerere.rikkahub.data.model.InjectionPosition
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.PromptInjection
@@ -104,9 +103,12 @@ import me.rerere.rikkahub.ui.components.ui.PagerTab
 import me.rerere.rikkahub.ui.components.ui.PagerTabs
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
+import me.rerere.rikkahub.ui.components.ui.TextArea
 import me.rerere.rikkahub.ui.components.ui.cardGroupItemShape
 import me.rerere.rikkahub.ui.components.ui.longPressReorder
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.rememberExporter
+import me.rerere.rikkahub.ui.hooks.rememberImporter
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
@@ -195,7 +197,7 @@ private fun ModeInjectionTab(
         newList.add(to.index, item)
         onUpdate(newList)
     }
-    val editState = useEditState<PromptInjection.ModeInjection> { edited ->
+    val editState = useEditState(PromptInjection.ModeInjection.serializer()) { edited ->
         val index = modeInjections.indexOfFirst { it.id == edited.id }
         if (index >= 0) {
             onUpdate(modeInjections.toMutableList().apply { set(index, edited) })
@@ -398,12 +400,13 @@ private fun ModeInjectionCard(
 }
 
 @Composable
-private fun ModeInjectionEditSheet(
+internal fun ModeInjectionEditSheet(
     injection: PromptInjection.ModeInjection,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
     onEdit: (PromptInjection.ModeInjection) -> Unit
 ) {
+    val contentState = rememberTextFieldState(injection.content)
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
     val scope = rememberCoroutineScope()
 
@@ -426,6 +429,7 @@ private fun ModeInjectionEditSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.9f)
+                .imePadding()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -502,13 +506,9 @@ private fun ModeInjectionEditSheet(
                     }
                 }
 
-                OutlinedTextField(
-                    value = injection.content,
-                    onValueChange = { onEdit(injection.copy(content = it)) },
-                    label = { Text(stringResource(R.string.prompt_page_injection_content)) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
+                TextArea(
+                    state = contentState,
+                    label = stringResource(R.string.prompt_page_injection_content),
                     minLines = 5
                 )
             }
@@ -520,7 +520,10 @@ private fun ModeInjectionEditSheet(
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.prompt_page_cancel))
                 }
-                Button(onClick = onConfirm) {
+                Button(onClick = {
+                    onEdit(injection.copy(content = contentState.text.toString()))
+                    onConfirm()
+                }) {
                     Text(stringResource(R.string.prompt_page_confirm))
                 }
             }
@@ -600,7 +603,7 @@ private fun LorebookTab(
         newList.add(to.index, item)
         onUpdate(newList)
     }
-    val editState = useEditState<Lorebook> { edited ->
+    val editState = useEditState(Lorebook.serializer()) { edited ->
         val index = lorebooks.indexOfFirst { it.id == edited.id }
         if (index >= 0) {
             onUpdate(lorebooks.toMutableList().apply { set(index, edited) })
@@ -814,7 +817,7 @@ private fun LorebookCard(
 }
 
 @Composable
-private fun LorebookEditSheet(
+internal fun LorebookEditSheet(
     book: Lorebook,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
@@ -822,7 +825,7 @@ private fun LorebookEditSheet(
 ) {
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
     val scope = rememberCoroutineScope()
-    val entryEditState = useEditState<PromptInjection.RegexInjection> { edited ->
+    val entryEditState = useEditState(PromptInjection.RegexInjection.serializer()) { edited ->
         val index = book.entries.indexOfFirst { it.id == edited.id }
         if (index >= 0) {
             onEdit(book.copy(entries = book.entries.toMutableList().apply { set(index, edited) }))
@@ -850,6 +853,7 @@ private fun LorebookEditSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.95f)
+                .imePadding()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -1014,6 +1018,7 @@ private fun RegexInjectionEditDialog(
     onEdit: (PromptInjection.RegexInjection) -> Unit
 ) {
     var newKeyword by remember { mutableStateOf("") }
+    val contentState = rememberTextFieldState(entry.content)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1178,13 +1183,9 @@ private fun RegexInjectionEditDialog(
                     }
                 }
 
-                OutlinedTextField(
-                    value = entry.content,
-                    onValueChange = { onEdit(entry.copy(content = it)) },
-                    label = { Text(stringResource(R.string.prompt_page_injection_content)) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(150.dp),
+                TextArea(
+                    state = contentState,
+                    label = stringResource(R.string.prompt_page_injection_content),
                     minLines = 4
                 )
             }
@@ -1192,7 +1193,10 @@ private fun RegexInjectionEditDialog(
         confirmButton = {
             val canSave = entry.keywords.isNotEmpty() || entry.constantActive
             TextButton(
-                onClick = onConfirm,
+                onClick = {
+                    onEdit(entry.copy(content = contentState.text.toString()))
+                    onConfirm()
+                },
                 enabled = canSave
             ) {
                 Text(stringResource(R.string.prompt_page_confirm))

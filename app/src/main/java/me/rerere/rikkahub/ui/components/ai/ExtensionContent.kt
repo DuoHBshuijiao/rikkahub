@@ -33,16 +33,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlin.uuid.Uuid
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Link01
 import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.skills.SkillMetadata
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.QuickMessage
+import me.rerere.rikkahub.data.skills.SkillMetadata
+import kotlin.uuid.Uuid
 
 @Composable
 fun ModeInjectionsContent(
@@ -53,6 +53,7 @@ fun ModeInjectionsContent(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     colors: ListItemColors = ListItemDefaults.segmentedColors(),
     onManage: (() -> Unit)? = null,
+    onEdit: ((Uuid) -> Unit)? = null,
 ) {
     ExtensionList(
         items = modeInjections,
@@ -62,6 +63,7 @@ fun ModeInjectionsContent(
     ) { injection, shapes ->
         ExtensionListItem(
             title = injection.name.ifBlank { stringResource(R.string.extension_content_unnamed) },
+            onLongClick = onEdit?.let { { it(injection.id) } },
             checked = selectedIds.contains(injection.id),
             onCheckedChange = { checked -> onToggle(injection.id, checked) },
             shapes = shapes,
@@ -79,6 +81,7 @@ fun LorebooksContent(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     colors: ListItemColors = ListItemDefaults.segmentedColors(),
     onManage: (() -> Unit)? = null,
+    onEdit: ((Uuid) -> Unit)? = null,
 ) {
     ExtensionList(
         items = lorebooks,
@@ -88,6 +91,7 @@ fun LorebooksContent(
     ) { lorebook, shapes ->
         ExtensionListItem(
             title = lorebook.name.ifBlank { stringResource(R.string.extension_content_unnamed_lorebook) },
+            onLongClick = onEdit?.let { { it(lorebook.id) } },
             description = lorebook.description,
             checked = selectedIds.contains(lorebook.id),
             onCheckedChange = { checked -> onToggle(lorebook.id, checked) },
@@ -106,6 +110,7 @@ fun SkillsContent(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     colors: ListItemColors = ListItemDefaults.segmentedColors(),
     onManage: (() -> Unit)? = null,
+    onEdit: ((String) -> Unit)? = null,
 ) {
     ExtensionList(
         items = skills,
@@ -116,6 +121,7 @@ fun SkillsContent(
     ) { skill, shapes ->
         ExtensionListItem(
             title = skill.name,
+            onLongClick = onEdit?.let { { it(skill.name) } },
             description = skill.description,
             checked = enabledSkills.contains(skill.name),
             onCheckedChange = { checked -> onToggle(skill.name, checked) },
@@ -134,6 +140,7 @@ fun QuickMessagesContent(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     colors: ListItemColors = ListItemDefaults.segmentedColors(),
     onManage: (() -> Unit)? = null,
+    onEdit: ((Uuid) -> Unit)? = null,
 ) {
     ExtensionList(
         items = quickMessages,
@@ -144,6 +151,7 @@ fun QuickMessagesContent(
     ) { quickMessage, shapes ->
         ExtensionListItem(
             title = quickMessage.title.ifBlank { stringResource(R.string.extension_content_unnamed) },
+            onLongClick = onEdit?.let { { it(quickMessage.id) } },
             description = quickMessage.content,
             descriptionMaxLines = 2,
             checked = selectedIds.contains(quickMessage.id),
@@ -191,10 +199,13 @@ private fun ExtensionListItem(
     description: String = "",
     // 技能等的描述可能很长，完整内容在管理页看
     descriptionMaxLines: Int = 3,
+    onLongClick: (() -> Unit)? = null,
 ) {
     SegmentedListItem(
         checked = checked,
         onCheckedChange = onCheckedChange,
+        onLongClick = onLongClick,
+        onLongClickLabel = if (onLongClick != null) "编辑" else null,
         shapes = shapes,
         colors = colors,
         supportingContent = if (description.isNotBlank()) {
@@ -205,7 +216,9 @@ private fun ExtensionListItem(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-        } else null,
+        } else {
+            null
+        },
         trailingContent = {
             // 整行都能点击切换，开关只用来显示状态
             Switch(checked = checked, onCheckedChange = null)

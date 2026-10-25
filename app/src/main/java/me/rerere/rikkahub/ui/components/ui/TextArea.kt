@@ -6,19 +6,18 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
-import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -27,19 +26,24 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import me.rerere.ui.toast.ToastType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,7 +52,7 @@ import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.context.LocalToaster
-import me.rerere.rikkahub.ui.modifier.onClick
+import me.rerere.ui.toast.ToastType
 
 /**
  * A multi-line text input component with a header and file import functionality.
@@ -82,7 +86,9 @@ fun TextArea(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
-    var isFullScreen by remember { mutableStateOf(false) }
+    var isFullScreen by rememberSaveable { mutableStateOf(false) }
+    val editorScrollState = rememberScrollState()
+    val fullscreenScrollState = rememberScrollState()
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -109,7 +115,6 @@ fun TextArea(
         }
     }
 
-
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -132,26 +137,17 @@ fun TextArea(
                     modifier = Modifier.weight(1f)
                 ) {
                     if (enableFullscreen) {
-                        Icon(
-                            imageVector = HugeIcons.Fullscreen,
-                            contentDescription = stringResource(R.string.text_area_fullscreen_edit),
-                            modifier = Modifier
-                                .onClick(onClick = {
-                                    isFullScreen = true
-                                })
-                                .size(24.dp)
-                        )
+                        IconButton(onClick = { isFullScreen = true }, enabled = enabled) {
+                            Icon(HugeIcons.Fullscreen, stringResource(R.string.text_area_fullscreen_edit))
+                        }
                     }
 
-                    Icon(
-                        imageVector = HugeIcons.FileImport,
-                        contentDescription = stringResource(R.string.text_area_import_from_file),
-                        modifier = Modifier
-                            .onClick(onClick = {
-                                filePickerLauncher.launch(supportedFileTypes)
-                            })
-                            .size(24.dp)
-                    )
+                    IconButton(
+                        onClick = { filePickerLauncher.launch(supportedFileTypes) },
+                        enabled = enabled && !readOnly,
+                    ) {
+                        Icon(HugeIcons.FileImport, stringResource(R.string.text_area_import_from_file))
+                    }
                 }
             }
 
@@ -162,13 +158,16 @@ fun TextArea(
                     .fillMaxWidth(),
                 placeholder = if (placeholder.isNotEmpty()) {
                     { Text(placeholder) }
-                } else null,
+                } else {
+                    null
+                },
                 lineLimits = TextFieldLineLimits.MultiLine(
                     minHeightInLines = minLines,
                     maxHeightInLines = maxLines
                 ),
                 enabled = enabled,
-                readOnly = readOnly
+                readOnly = readOnly,
+                scrollState = editorScrollState,
             )
         }
     }
@@ -179,7 +178,13 @@ fun TextArea(
             state = state,
             label = label,
             placeholder = placeholder,
-            onDismiss = { isFullScreen = false }
+            readOnly = readOnly,
+            scrollState = fullscreenScrollState,
+            initialScroll = editorScrollState.value,
+            onDismiss = {
+                scope.launch { editorScrollState.scrollTo(fullscreenScrollState.value) }
+                isFullScreen = false
+            }
         )
     }
 }
@@ -189,64 +194,67 @@ private fun FullScreenTextEditor(
     state: TextFieldState,
     label: String,
     placeholder: String,
+    readOnly: Boolean,
+    scrollState: androidx.compose.foundation.ScrollState,
+    initialScroll: Int,
     onDismiss: () -> Unit
 ) {
-    var editingText by remember(state.text.toString()) {
-        mutableStateOf(state.text.toString())
-    }
-
-    BasicAlertDialog(
+    val focusRequester = remember { FocusRequester() }
+    var located by rememberSaveable { mutableStateOf(false) }
+    Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
-            usePlatformDefaultWidth = false
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
         ),
     ) {
-        Column(
+        Surface(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Bottom
         ) {
-            Surface(
+            Column(
                 modifier = Modifier
-                    .widthIn(max = 800.dp)
-                    .fillMaxHeight(0.9f),
-                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                    .padding(8.dp)
+                    .safeDrawingPadding()
+                    .imePadding()
+                    .fillMaxSize(),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Column(
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .fillMaxSize(),
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row {
-                        TextButton(
-                            onClick = {
-                                state.setTextAndPlaceCursorAtEnd(editingText)
-                                onDismiss()
-                            }
-                        ) {
-                            Text(stringResource(R.string.text_area_save))
-                        }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) {
+                        Text("完成")
                     }
-                    TextField(
-                        value = editingText,
-                        onValueChange = { editingText = it },
-                        modifier = Modifier
-                            .imePadding()
-                            .fillMaxSize(),
-                        shape = RoundedCornerShape(16.dp),
-                        placeholder = if (placeholder.isNotEmpty()) {
-                            { Text(placeholder) }
-                        } else if (label.isNotEmpty()) {
-                            { Text(label) }
-                        } else null,
-                        colors = TextFieldDefaults.colors().copy(
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                        ),
-                    )
+                }
+                TextField(
+                    state = state,
+                    readOnly = readOnly,
+                    scrollState = scrollState,
+                    modifier = Modifier
+                        .focusRequester(focusRequester)
+                        .testTag("text-area-fullscreen")
+                        .fillMaxSize(),
+                    shape = RoundedCornerShape(16.dp),
+                    placeholder = if (placeholder.isNotEmpty()) {
+                        { Text(placeholder) }
+                    } else if (label.isNotEmpty()) {
+                        { Text(label) }
+                    } else {
+                        null
+                    },
+                    colors = TextFieldDefaults.colors().copy(
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                    ),
+                )
+                LaunchedEffect(Unit) {
+                    if (!located) {
+                        scrollState.scrollTo(initialScroll)
+                        located = true
+                    }
+                    if (!readOnly) focusRequester.requestFocus()
                 }
             }
         }

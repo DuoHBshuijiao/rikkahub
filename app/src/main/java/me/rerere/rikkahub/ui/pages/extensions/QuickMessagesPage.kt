@@ -6,21 +6,27 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,9 +48,11 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.ui.components.ai.ExtensionEmptyState
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
 import me.rerere.rikkahub.ui.components.ui.ItemAction
 import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
+import me.rerere.rikkahub.ui.components.ui.TextArea
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import me.rerere.ui.components.RikkaConfirmDialog
@@ -55,7 +63,8 @@ fun QuickMessagesPage(vm: QuickMessagesVM = koinViewModel()) {
     val settings = vm.settings.collectAsStateWithLifecycle().value
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
-    var editTarget by remember { mutableStateOf<QuickMessage?>(null) }
+    var editTargetId by rememberSaveable { mutableStateOf<String?>(null) }
+    val editTarget = settings.quickMessages.find { it.id.toString() == editTargetId }
     var deleteTarget by remember { mutableStateOf<QuickMessage?>(null) }
 
     Scaffold(
@@ -93,7 +102,7 @@ fun QuickMessagesPage(vm: QuickMessagesVM = koinViewModel()) {
             items(settings.quickMessages, key = { it.id }) { quickMessage ->
                 QuickMessageCard(
                     quickMessage = quickMessage,
-                    onEdit = { editTarget = quickMessage },
+                    onEdit = { editTargetId = quickMessage.id.toString() },
                     onDelete = { deleteTarget = quickMessage },
                 )
             }
@@ -116,7 +125,7 @@ fun QuickMessagesPage(vm: QuickMessagesVM = koinViewModel()) {
         EditQuickMessageDialog(
             title = stringResource(R.string.quick_messages_page_edit_title),
             initialQuickMessage = quickMessage,
-            onDismiss = { editTarget = null },
+            onDismiss = { editTargetId = null },
             onConfirm = { title, content ->
                 vm.updateQuickMessage(
                     quickMessage.copy(
@@ -124,7 +133,7 @@ fun QuickMessagesPage(vm: QuickMessagesVM = koinViewModel()) {
                         content = content,
                     )
                 )
-                editTarget = null
+                editTargetId = null
             },
         )
     }
@@ -198,7 +207,7 @@ private fun QuickMessageCard(
 }
 
 @Composable
-private fun EditQuickMessageDialog(
+internal fun EditQuickMessageDialog(
     title: String,
     initialQuickMessage: QuickMessage?,
     onDismiss: () -> Unit,
@@ -207,44 +216,48 @@ private fun EditQuickMessageDialog(
     var quickMessageTitle by rememberSaveable(initialQuickMessage?.id) {
         mutableStateOf(initialQuickMessage?.title ?: "")
     }
-    var quickMessageContent by rememberSaveable(initialQuickMessage?.id) {
-        mutableStateOf(initialQuickMessage?.content ?: "")
-    }
+    val contentState = rememberTextFieldState(initialQuickMessage?.content ?: "")
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = quickMessageTitle,
-                    onValueChange = { quickMessageTitle = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.assistant_page_quick_message_title)) },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = quickMessageContent,
-                    onValueChange = { quickMessageContent = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.assistant_page_quick_message_content)) },
-                    minLines = 4,
-                    maxLines = 8,
-                )
+        sheetState = rememberBottomSheetState(
+            initialValue = SheetValue.Hidden,
+            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+        ),
+        sheetGesturesEnabled = false,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().imePadding()
+                .verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleLargeEmphasized)
+            CardGroup {
+                formItem {
+                    OutlinedTextField(
+                        value = quickMessageTitle,
+                        onValueChange = { quickMessageTitle = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.assistant_page_quick_message_title)) },
+                        singleLine = true,
+                    )
+                }
+                formItem {
+                    TextArea(
+                        state = contentState,
+                        label = stringResource(R.string.assistant_page_quick_message_content),
+                        minLines = 4,
+                        maxLines = 8,
+                    )
+                }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(quickMessageTitle.trim(), quickMessageContent.trim()) },
-                enabled = quickMessageTitle.isNotBlank() && quickMessageContent.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.assistant_page_save))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+                androidx.compose.material3.Button(
+                    onClick = { onConfirm(quickMessageTitle.trim(), contentState.text.toString().trim()) },
+                    enabled = quickMessageTitle.isNotBlank() && contentState.text.isNotBlank(),
+                ) { Text(stringResource(R.string.assistant_page_save)) }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
+        }
+    }
 }

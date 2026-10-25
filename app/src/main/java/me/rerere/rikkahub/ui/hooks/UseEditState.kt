@@ -4,14 +4,30 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.Json
 
 @Composable
 fun <T> useEditState(
+    serializer: KSerializer<T>? = null,
     onUpdate: (T) -> Unit
 ): EditState<T> {
-    var isEditing by remember { mutableStateOf(false) }
-    var currentState by remember { mutableStateOf<T?>(null) }
+    var isEditing by if (serializer != null) {
+        rememberSaveable { mutableStateOf(false) }
+    } else {
+        remember { mutableStateOf(false) }
+    }
+    var currentState by if (serializer != null) {
+        rememberSaveable(stateSaver = Saver<T?, String>(
+            save = { value -> value?.let { Json.encodeToString(serializer, it) } },
+            restore = { Json.decodeFromString(serializer, it) },
+        )) { mutableStateOf(null) }
+    } else {
+        remember { mutableStateOf<T?>(null) }
+    }
 
     return object : EditState<T> {
         override var isEditing: Boolean

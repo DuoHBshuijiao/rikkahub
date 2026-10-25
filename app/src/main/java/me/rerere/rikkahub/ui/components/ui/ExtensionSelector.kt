@@ -23,15 +23,17 @@ import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.skills.SkillManager
 import me.rerere.rikkahub.data.skills.SkillMetadata
-import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ai.ExtensionEmptyState
 import me.rerere.rikkahub.ui.components.ai.LorebooksContent
 import me.rerere.rikkahub.ui.components.ai.ModeInjectionsContent
 import me.rerere.rikkahub.ui.components.ai.QuickMessagesContent
 import me.rerere.rikkahub.ui.components.ai.SkillsContent
+import me.rerere.rikkahub.ui.pages.extensions.ExtensionEditType
 import org.koin.compose.koinInject
+import kotlin.uuid.Uuid
 
 internal enum class ExtensionTab(
     override val icon: ImageVector,
@@ -46,7 +48,6 @@ internal enum class ExtensionTab(
         @Composable get() = stringResource(labelRes)
 }
 
-
 @Composable
 fun ExtensionSelector(
     modifier: Modifier = Modifier,
@@ -56,6 +57,8 @@ fun ExtensionSelector(
     onNavigateToQuickMessages: () -> Unit = {},
     onNavigateToPrompts: () -> Unit = {},
     onNavigateToSkills: () -> Unit = {},
+    onEdit: ((ExtensionEditType, Uuid) -> Unit)? = null,
+    onEditSkill: ((String) -> Unit)? = null,
 ) {
     val skillManager: SkillManager = koinInject()
     var skills by remember { mutableStateOf<List<SkillMetadata>>(emptyList()) }
@@ -99,6 +102,7 @@ fun ExtensionSelector(
                                 onUpdate(assistant.copy(quickMessageIds = newIds))
                             },
                             onManage = onNavigateToQuickMessages,
+                            onEdit = onEdit?.let { edit -> { edit(ExtensionEditType.QUICK_MESSAGE, it) } },
                         )
                     } else {
                         ExtensionEmptyState(
@@ -124,6 +128,7 @@ fun ExtensionSelector(
                                 onUpdate(assistant.copy(modeInjectionIds = newIds))
                             },
                             onManage = onNavigateToPrompts,
+                            onEdit = onEdit?.let { edit -> { edit(ExtensionEditType.MODE_INJECTION, it) } },
                         )
                     } else {
                         ExtensionEmptyState(
@@ -149,6 +154,7 @@ fun ExtensionSelector(
                                 onUpdate(assistant.copy(lorebookIds = newIds))
                             },
                             onManage = onNavigateToPrompts,
+                            onEdit = onEdit?.let { edit -> { edit(ExtensionEditType.LOREBOOK, it) } },
                         )
                     } else {
                         ExtensionEmptyState(
@@ -174,6 +180,7 @@ fun ExtensionSelector(
                                 onUpdate(assistant.copy(enabledSkills = newSkills))
                             },
                             onManage = onNavigateToSkills,
+                            onEdit = onEditSkill,
                         )
                     } else {
                         ExtensionEmptyState(

@@ -46,7 +46,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
-import kotlin.uuid.Uuid
 import kotlinx.coroutines.Job
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
@@ -86,6 +85,7 @@ import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.workspace.WorkspaceShellStatus
 import org.koin.compose.koinInject
+import kotlin.uuid.Uuid
 
 // 顺序决定切换方向：往后是进入下一级，往前是返回
 private enum class FilesPickerPage {
@@ -532,7 +532,16 @@ private fun ExtensionPickerPage(
             onNavigateToSkills = {
                 onDismissAll()
                 navController.navigate(Screen.Skills)
-            })
+            },
+            onEdit = { type, id ->
+                onDismissAll()
+                navController.navigate(Screen.ExtensionEdit(type, id.toString()))
+            },
+            onEditSkill = { name ->
+                onDismissAll()
+                navController.navigate(Screen.SkillDetail(name))
+            },
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
     }
