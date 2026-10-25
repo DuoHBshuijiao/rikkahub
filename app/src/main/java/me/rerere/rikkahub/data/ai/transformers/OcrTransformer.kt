@@ -68,7 +68,12 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
                         parts = message.parts.map { part ->
                             when {
                                 part is UIMessagePart.Image && part.url.startsWith("file:") -> {
-                                    UIMessagePart.Text(performOcr(part))
+                                    val text = if (ctx.allowExternalAccess) {
+                                        performOcr(part)
+                                    } else {
+                                        cache.get(part.url) ?: error("图片的 OCR 缓存不可用，无法离线导出 JSON；可改用 Markdown")
+                                    }
+                                    UIMessagePart.Text(text)
                                 }
 
                                 else -> part

@@ -90,6 +90,17 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
     }
     private val interactionsAPI = InteractionsAPI(client = client, keyRoulette = keyRoulette)
 
+    override fun buildTextRequestBody(
+        providerSetting: ProviderSetting.Google,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+        stream: Boolean,
+    ): JsonObject = if (providerSetting.usesInteractionsApi()) {
+        interactionsAPI.buildRequestBody(messages, params, stream)
+    } else {
+        buildCompletionRequestBody(messages, params)
+    }
+
     override suspend fun getQuota(providerSetting: ProviderSetting.Google): ProviderQuota? =
         client.runQuotaQuery(providerSetting) {
             keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())

@@ -3,6 +3,7 @@ package me.rerere.rikkahub.data.ai
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.serialization.json.JsonObject
 import me.rerere.ai.agent.AgentHooks
 import me.rerere.ai.agent.AgentRequest
 import me.rerere.ai.agent.RetryPolicy
@@ -37,6 +38,10 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.export.ExportOptions
+import me.rerere.rikkahub.data.export.filterExportMessages
+import me.rerere.rikkahub.data.export.filterExportRequestBody
+import me.rerere.rikkahub.data.export.validateExportAttachments
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MemoryFile
@@ -197,11 +202,33 @@ class ChatRequestFactory(
         return summary.ifBlank { error("Failed to generate compressed summary") }
     }
 
+    /** Rebuild the full selected transcript offline using the normal protocol serializer. */
+    suspend fun buildExportRequestBody(
+        settings: Settings,
+        conversation: Conversation,
+        messages: List<UIMessage>,
+        options: ExportOptions,
+    ): JsonObject {
+        val selected = filterExportMessages(messages, options)
+        require(selected.isNotEmpty()) { "筛选后没有可导出的消息" }
+        validateExportAttachments(selected)
+        val turn = createContext(settings, conversation)
+        val step = buildStep(turn, selected, export = true)
+        val body = providerManager.getProviderByType(turn.providerSetting).buildTextRequestBody(
+            providerSetting = turn.providerSetting,
+            messages = filterExportMessages(step.messages, options),
+            params = step.params,
+            stream = turn.assistant.streamOutput,
+        )
+        return filterExportRequestBody(body, options)
+    }
+
     /** 一步请求实际发出的消息和参数；正常对话和压缩共用，二者的请求前缀必须一致才能命中提示词缓存 */
     private suspend fun buildStep(
         turn: ChatTurnContext,
         messages: List<UIMessage>,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
+        export: Boolean = false,
     ): StepRequest {
         val assistant = turn.assistant
         val requestMessages = buildList {
@@ -230,7 +257,7 @@ class ChatRequestFactory(
             if (system.isNotBlank()) {
                 add(UIMessage.system(prompt = system).copy(isSynthetic = true))
             }
-            addAll(messages.limitContext(assistant.contextMessageLimit))
+            addAll(if (export) messages else messages.limitContext(assistant.contextMessageLimit))
         }.transforms(
             transformers = inputTransformers,
             context = context,
@@ -240,6 +267,7 @@ class ChatRequestFactory(
             processingStatus = processingStatus,
             workspaceCwd = turn.workspaceCwd,
             userPersona = turn.userPersona,
+            allowExternalAccess = !export,
         )
         val params = TextGenerationParams(
             model = turn.model,

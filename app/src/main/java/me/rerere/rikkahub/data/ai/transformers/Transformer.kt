@@ -17,6 +17,7 @@ class TransformerContext(
     val processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
     val workspaceCwd: String? = null,
     val userPersona: UserPersona = settings.getCurrentUserPersona(),
+    val allowExternalAccess: Boolean = true,
 )
 
 interface MessageTransformer {
@@ -70,6 +71,7 @@ suspend fun List<UIMessage>.transforms(
     processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
     workspaceCwd: String? = null,
     userPersona: UserPersona = settings.getCurrentUserPersona(),
+    allowExternalAccess: Boolean = true,
 ): List<UIMessage> {
     val ctx = TransformerContext(
         context = context,
@@ -79,6 +81,7 @@ suspend fun List<UIMessage>.transforms(
         processingStatus = processingStatus,
         workspaceCwd = workspaceCwd,
         userPersona = userPersona,
+        allowExternalAccess = allowExternalAccess,
     )
     return transformers.fold(this) { acc, transformer ->
         transformer.transform(ctx, acc)

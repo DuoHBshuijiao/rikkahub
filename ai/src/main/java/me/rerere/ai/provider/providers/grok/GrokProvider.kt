@@ -93,6 +93,13 @@ class GrokProvider(
     private val client = client.withAccountAuthenticator(credentials)
     private val responseAPI = ResponseAPI(this.client)
 
+    override fun buildTextRequestBody(
+        providerSetting: ProviderSetting.Grok,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+        stream: Boolean,
+    ): JsonObject = responseAPI.buildRequestBody(GROK_CAPABILITIES, messages, params, stream)
+
     override suspend fun listModels(providerSetting: ProviderSetting.Grok): List<Model> = coroutineScope {
         // 两个目录拿到一个就够用
         val cliRequest = async {

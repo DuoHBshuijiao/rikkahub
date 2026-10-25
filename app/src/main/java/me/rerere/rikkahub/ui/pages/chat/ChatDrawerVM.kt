@@ -47,6 +47,16 @@ class ChatDrawerVM(
     private val memoryConsolidationScheduler: MemoryConsolidationScheduler,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+    private val _exportConversation = MutableStateFlow<Conversation?>(null)
+    val exportConversation: StateFlow<Conversation?> = _exportConversation.asStateFlow()
+
+    suspend fun prepareConversationExport(id: Uuid) {
+        _exportConversation.value = chatService.getConversation(id) ?: error("会话已不存在")
+    }
+
+    fun dismissConversationExport() {
+        _exportConversation.value = null
+    }
 
     private val assistantIdFlow = settingsStore.settingsFlow
         .map { it.assistantId }

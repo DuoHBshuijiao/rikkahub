@@ -75,6 +75,13 @@ class ChatGPTProvider(
     private val client = client.withAccountAuthenticator(credentials)
     private val responseAPI = ResponseAPI(this.client)
 
+    override fun buildTextRequestBody(
+        providerSetting: ProviderSetting.ChatGPT,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+        stream: Boolean,
+    ): JsonObject = responseAPI.buildRequestBody(CODEX_CAPABILITIES, messages, params, stream = true)
+
     override suspend fun listModels(providerSetting: ProviderSetting.ChatGPT): List<Model> {
         val request = Request.Builder()
             .url("$CODEX_BASE_URL/models?client_version=$CODEX_CLIENT_VERSION")

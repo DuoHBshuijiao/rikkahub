@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.chat
 
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Folder01
+import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.Forward02
 import me.rerere.hugeicons.stroke.Pin
 import me.rerere.hugeicons.stroke.PinOff
@@ -85,6 +86,7 @@ fun ColumnScope.ConversationList(
     header: (@Composable () -> Unit)? = null,
     onClick: (Conversation) -> Unit = {},
     onDelete: (Conversation) -> Unit = {},
+    onExport: (Conversation) -> Unit = {},
     onRegenerateTitle: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
     onMoveToAssistant: (Conversation) -> Unit = {},
@@ -171,6 +173,7 @@ fun ColumnScope.ConversationList(
                         loading = item.conversation.id in conversationJobs,
                         onClick = onClick,
                         onDelete = onDelete,
+                        onExport = onExport,
                         onRegenerateTitle = onRegenerateTitle,
                         onPin = onPin,
                         onMoveToAssistant = onMoveToAssistant,
@@ -242,6 +245,7 @@ private fun ConversationItem(
     loading: Boolean,
     modifier: Modifier = Modifier,
     onDelete: (Conversation) -> Unit = {},
+    onExport: (Conversation) -> Unit = {},
     onRegenerateTitle: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
     onMoveToAssistant: (Conversation) -> Unit = {},
@@ -365,6 +369,17 @@ private fun ConversationItem(
                     leadingIcon = {
                         Icon(HugeIcons.Folder01, null)
                     }
+                )
+
+                DropdownMenuItem(
+                    text = {
+                        Text("导出聊天记录")
+                    },
+                    onClick = {
+                        showDropdownMenu = false
+                        onExport(conversation)
+                    },
+                    leadingIcon = { Icon(HugeIcons.File02, null) }
                 )
 
                 DropdownMenuItem(

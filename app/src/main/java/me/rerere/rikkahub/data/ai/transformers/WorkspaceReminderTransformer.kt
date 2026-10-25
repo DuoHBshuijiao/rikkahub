@@ -28,6 +28,7 @@ class WorkspaceReminderTransformer(
     private val workspaceRepository: WorkspaceRepository,
 ) : InputMessageTransformer {
     private val remoteEnvironments = RemoteEnvironmentCache()
+    private val preparedPrompts = ConcurrentHashMap<Pair<WorkspaceEntity, String?>, String>()
 
     override suspend fun transform(
         ctx: TransformerContext,
@@ -37,6 +38,12 @@ class WorkspaceReminderTransformer(
         val workspace = workspaceRepository.getById(workspaceId) ?: return messages
         // 与 ChatToolFactory.createWorkspaceToolsIfReady 保持一致: 仅在 shell 就绪时注入
         if (workspace.shellStatus != WorkspaceShellStatus.READY.name) return messages
+        val promptKey = workspace to ctx.workspaceCwd
+        if (!ctx.allowExternalAccess) {
+            val cached = preparedPrompts[promptKey]
+                ?: error("工作区提示词缓存不可用，无法离线导出 JSON；可改用 Markdown")
+            return messages.withPrompt(cached)
+        }
         val layout = workspaceRepository.layout(workspaceId) ?: return messages
 
         val prompt = if (workspace.isSsh()) {
@@ -56,6 +63,7 @@ class WorkspaceReminderTransformer(
                 cwd = ctx.workspaceCwd,
             ) + buildAgentsPrompt(workspaceId, ctx.workspaceCwd)
         }
+        preparedPrompts[promptKey] = prompt
         return messages.withPrompt(prompt)
     }
 

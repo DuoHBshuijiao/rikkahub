@@ -117,9 +117,21 @@ fun ChatDrawerContent(
     val context = LocalContext.current
     val toaster = LocalToaster.current
     val repo = koinInject<ConversationRepository>()
+    var loadingExport by remember { mutableStateOf(false) }
 
     val activity = context as ComponentActivity
     val drawerVm: ChatDrawerVM = koinViewModel(viewModelStoreOwner = activity)
+    val conversationToExport by drawerVm.exportConversation.collectAsStateWithLifecycle()
+
+    conversationToExport?.let { snapshot ->
+        ChatExportSheet(
+            visible = true,
+            onDismissRequest = drawerVm::dismissConversationExport,
+            conversation = snapshot,
+            selectedMessages = snapshot.currentMessages,
+            allowImageExport = false,
+        )
+    }
 
     val conversations = drawerVm.conversations.collectAsLazyPagingItems()
     val folders by drawerVm.folders.collectAsStateWithLifecycle()
@@ -318,6 +330,20 @@ fun ChatDrawerContent(
                 },
                 onRegenerateTitle = {
                     vm.generateTitle(it, true)
+                },
+                onExport = { target ->
+                    if (!loadingExport) scope.launch {
+                        loadingExport = true
+                        try {
+                            drawerVm.prepareConversationExport(target.id)
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            toaster.show("读取会话失败：${e.message}", type = ToastType.Error)
+                        } finally {
+                            loadingExport = false
+                        }
+                    }
                 },
                 onDelete = {
                     scope.launch {
