@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -36,6 +35,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.DurationUnit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import me.rerere.ai.provider.Model
@@ -51,10 +54,7 @@ import me.rerere.rikkahub.ui.components.ui.ChainOfThoughtScope
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.utils.extractThinkingTitle
-import kotlin.time.Clock
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.DurationUnit
+import me.rerere.ui.markdown.SelectableContent
 
 enum class ReasoningCardState(val expanded: Boolean) {
     Collapsed(false),
@@ -179,17 +179,13 @@ private fun ReasoningContent(
                     visual = true,
                 ),
                 style = reasoningTextStyle,
+                streaming = loading,
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        // 思考结束后即可选择，即使正文仍在生成。Markdown 的快照观察须留在 UI 线程，
-        // 避免选择工具栏在后台重算状态，与主线程对 selectable 列表的访问发生冲突。
-        if (loading) {
+        // 思考内容和正文使用相同的 BetterText 选择机制。
+        SelectableContent {
             reasoningContent()
-        } else {
-            SelectionContainer {
-                reasoningContent()
-            }
         }
     }
 }

@@ -1,7 +1,7 @@
 package me.rerere.rikkahub.utils
 
-import me.rerere.ui.markdown.MarkdownBlock
-import me.rerere.ui.markdown.MarkdownInline
+import me.rerere.bettertext.markdown.MarkdownBlock
+import me.rerere.bettertext.markdown.MarkdownInline
 import me.rerere.ui.markdown.parseMarkdown
 
 /**

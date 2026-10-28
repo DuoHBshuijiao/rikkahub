@@ -6,20 +6,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.contextmenu.data.TextContextMenuItem
-import androidx.compose.foundation.text.contextmenu.data.TextContextMenuKeys
-import androidx.compose.foundation.text.contextmenu.data.TextContextMenuSession
-import androidx.compose.foundation.text.contextmenu.provider.LocalTextContextMenuToolbarProvider
-import androidx.compose.foundation.text.contextmenu.provider.TextContextMenuDataProvider
-import androidx.compose.foundation.text.contextmenu.provider.TextContextMenuProvider
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -27,7 +19,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.TextToolbar
+import androidx.compose.ui.platform.TextToolbarStatus
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
@@ -37,6 +31,9 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import me.rerere.bettertext.markdown.MarkdownDocument
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -44,8 +41,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class MarkdownSelectionStreamingTest {
@@ -54,24 +49,25 @@ class MarkdownSelectionStreamingTest {
     @Test
     fun completedReasoningRemainsSelectableWhileTheResponseStreams() {
         var response by mutableStateOf("Initial response.")
+        var generating by mutableStateOf(true)
         var inset by mutableIntStateOf(0)
         val rendered = AtomicReference<MarkdownDocument>()
-        val toolbar = AtomicReference<RecordingToolbarProvider>()
+        val toolbar = AtomicReference<RecordingTextToolbar>()
         val reasoning = "Reasoning remains selectable during streaming."
         val secondParagraph = "This second paragraph has already finished."
         compose.setContent {
             MaterialTheme {
-                val platform = requireNotNull(LocalTextContextMenuToolbarProvider.current)
-                val recording = remember(platform) { RecordingToolbarProvider(platform) }
+                val platform = LocalTextToolbar.current
+                val recording = remember(platform) { RecordingTextToolbar(platform) }
                 SideEffect { toolbar.set(recording) }
-                CompositionLocalProvider(LocalTextContextMenuToolbarProvider provides recording) {
+                CompositionLocalProvider(LocalTextToolbar provides recording) {
                     // Small layout changes exercise selection-bound invalidation without
                     // scrolling the completed reasoning offscreen and closing the toolbar.
                     Column(Modifier.fillMaxSize().padding(top = (8 + inset).dp)) {
-                        SelectionContainer {
+                        SelectableContent {
                             Markdown("# Finished reasoning\n\n$reasoning\n\n$secondParagraph")
                         }
-                        val document = rememberMarkdownDocument(response)
+                        val document = rememberMarkdownDocument(response, streaming = generating)
                         SideEffect { rendered.set(document) }
                         Markdown(
                             document = document,
@@ -82,7 +78,7 @@ class MarkdownSelectionStreamingTest {
             }
         }
         compose.onNodeWithText(reasoning).performTouchInput { longClick() }
-        compose.waitUntil(10_000) { toolbar.get()?.active?.get() != null }
+        compose.waitUntil(10_000) { toolbar.get()?.selectAll != null }
 
         repeat(40) { step ->
             val source = streamedResponse(step)
@@ -93,14 +89,17 @@ class MarkdownSelectionStreamingTest {
             compose.waitUntil(10_000) { rendered.get()?.source == source }
         }
 
+        compose.runOnIdle { generating = false }
+        compose.waitUntil(10_000) { rendered.get() == parseMarkdown(response) }
+
         compose.runOnIdle {
             val recording = toolbar.get()
-            assertTrue("The real toolbar must recompute selection bounds", recording.boundsReads.get() > 1)
+            assertTrue("The real toolbar must refresh selection bounds", recording.boundsReads.get() > 1)
             assertNull("Selection bounds were recalculated off the main thread", recording.offMainThread.get())
-            clickMenuItem(recording, TextContextMenuKeys.SelectAllKey)
+            checkNotNull(recording.selectAll).invoke()
         }
         compose.waitForIdle()
-        compose.runOnIdle { clickMenuItem(toolbar.get(), TextContextMenuKeys.CopyKey) }
+        compose.runOnIdle { checkNotNull(toolbar.get().copy).invoke() }
         compose.waitForIdle()
         compose.runOnIdle {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -111,6 +110,46 @@ class MarkdownSelectionStreamingTest {
             assertTrue(copied.contains(secondParagraph))
             assertFalse(copied.contains("Response paragraph"))
             assertEquals(parseMarkdown(response), rendered.get())
+            assertNull(toolbar.get().offMainThread.get())
+        }
+    }
+
+    @Test
+    fun sharedContainerCopiesReasoningAndStreamingBodyTogether() {
+        var response by mutableStateOf("Initial answer.")
+        val toolbar = AtomicReference<RecordingTextToolbar>()
+        val reasoning = "Completed reasoning."
+        compose.setContent {
+            MaterialTheme {
+                val platform = LocalTextToolbar.current
+                val recording = remember(platform) { RecordingTextToolbar(platform) }
+                SideEffect { toolbar.set(recording) }
+                CompositionLocalProvider(LocalTextToolbar provides recording) {
+                    SelectableContent {
+                        Column {
+                            SelectableContent { Markdown(reasoning) }
+                            Markdown(response, streaming = true)
+                        }
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText(reasoning).performTouchInput { longClick() }
+        compose.waitUntil(10_000) { toolbar.get()?.selectAll != null }
+        repeat(6) { index ->
+            compose.runOnIdle { response = "Answer update $index." }
+            compose.waitForIdle()
+        }
+        compose.runOnIdle { checkNotNull(toolbar.get().selectAll).invoke() }
+        compose.waitForIdle()
+        compose.runOnIdle { checkNotNull(toolbar.get().copy).invoke() }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val copied = context.getSystemService(ClipboardManager::class.java)
+                .primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
+            assertTrue(copied.contains(reasoning))
+            assertTrue(copied.contains("Answer update 5."))
             assertNull(toolbar.get().offMainThread.get())
         }
     }
@@ -189,48 +228,35 @@ class MarkdownSelectionStreamingTest {
         }
     }
 
-    private fun clickMenuItem(toolbar: RecordingToolbarProvider, key: Any) {
-        val provider = checkNotNull(toolbar.active.get()) { "The selection toolbar closed during streaming" }
-        val item = provider.data().components.filterIsInstance<TextContextMenuItem>().single { it.key == key }
-        item.onClick(object : TextContextMenuSession {
-            override fun close() = Unit
-        })
-    }
 }
 
-/** Uses the platform toolbar, while making its derived-bound recalculation observable to the test. */
-private class RecordingToolbarProvider(private val platform: TextContextMenuProvider) : TextContextMenuProvider {
-    val active = AtomicReference<TextContextMenuDataProvider?>()
+/** Records the actual toolbar used by BetterText while retaining native copy behavior. */
+private class RecordingTextToolbar(private val platform: TextToolbar) : TextToolbar {
     val boundsReads = AtomicInteger()
     val offMainThread = AtomicReference<String?>()
+    var copy: (() -> Unit)? = null
+    var selectAll: (() -> Unit)? = null
+    override val status: TextToolbarStatus get() = platform.status
 
-    override suspend fun showTextContextMenu(dataProvider: TextContextMenuDataProvider) {
-        val recording = object : TextContextMenuDataProvider {
-            private var coordinates: LayoutCoordinates? = null
-            private val bounds by derivedStateOf {
-                boundsReads.incrementAndGet()
-                if (Looper.myLooper() != Looper.getMainLooper()) {
-                    offMainThread.compareAndSet(null, Thread.currentThread().name)
-                }
-                dataProvider.contentBounds(checkNotNull(coordinates))
-            }
-
-            override fun contentBounds(destinationCoordinates: LayoutCoordinates): Rect {
-                coordinates = destinationCoordinates
-                return bounds
-            }
-
-            override fun position(destinationCoordinates: LayoutCoordinates) = contentBounds(
-                destinationCoordinates
-            ).topLeft
-
-            override fun data() = dataProvider.data()
+    override fun showMenu(
+        rect: Rect,
+        onCopyRequested: (() -> Unit)?,
+        onPasteRequested: (() -> Unit)?,
+        onCutRequested: (() -> Unit)?,
+        onSelectAllRequested: (() -> Unit)?,
+    ) {
+        boundsReads.incrementAndGet()
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            offMainThread.compareAndSet(null, Thread.currentThread().name)
         }
-        active.set(recording)
-        try {
-            platform.showTextContextMenu(recording)
-        } finally {
-            active.compareAndSet(recording, null)
-        }
+        copy = onCopyRequested
+        selectAll = onSelectAllRequested
+        platform.showMenu(rect, onCopyRequested, onPasteRequested, onCutRequested, onSelectAllRequested)
+    }
+
+    override fun hide() {
+        copy = null
+        selectAll = null
+        platform.hide()
     }
 }

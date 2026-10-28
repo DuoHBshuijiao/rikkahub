@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
@@ -62,6 +61,8 @@ import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.util.fastForEachIndexed
+import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.serialization.json.jsonArray
@@ -80,11 +81,11 @@ import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.UserPersona
-import me.rerere.rikkahub.data.model.getCurrentUserPersona
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.SearchJumpTarget
+import me.rerere.rikkahub.data.model.UserPersona
+import me.rerere.rikkahub.data.model.getCurrentUserPersona
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.searchContentFingerprint
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
@@ -104,9 +105,8 @@ import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.urlDecode
 import me.rerere.ui.charts.ChartCard
 import me.rerere.ui.charts.ChartSpec
+import me.rerere.ui.markdown.SelectableContent
 import me.rerere.ui.webview.WebViewContentCache
-import java.util.Locale
-import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun ChatMessage(
@@ -171,97 +171,99 @@ fun ChatMessage(
     val navController = LocalNavController.current
     val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        if (!message.parts.isEmptyUIMessage()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-            ) {
-                ChatMessageAssistantAvatar(
-                    message = message,
-                    model = model,
-                    assistant = assistant,
-                    loading = loading,
-                    modifier = Modifier.weight(1f)
-                )
-                ChatMessageUserAvatar(
-                    message = message,
-                    avatar = userPersona.avatar,
-                    nickname = userPersona.nickname,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-        CompositionLocalProvider(
-            LocalTextStyle provides textStyle,
-            LocalWorkspaceId provides assistant?.workspaceId?.toString(),
+    SelectableContent {
+        Column(
+            modifier = modifier.fillMaxWidth(),
+            horizontalAlignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            MessagePartsBlock(
-                searchTarget = searchTarget?.takeIf { it.messageId == message.id.toString() },
-                onSearchPosition = onSearchPosition,
-                assistant = assistant,
-                role = message.role,
+            if (!message.parts.isEmptyUIMessage()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                ) {
+                    ChatMessageAssistantAvatar(
+                        message = message,
+                        model = model,
+                        assistant = assistant,
+                        loading = loading,
+                        modifier = Modifier.weight(1f)
+                    )
+                    ChatMessageUserAvatar(
+                        message = message,
+                        avatar = userPersona.avatar,
+                        nickname = userPersona.nickname,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            CompositionLocalProvider(
+                LocalTextStyle provides textStyle,
+                LocalWorkspaceId provides assistant?.workspaceId?.toString(),
+            ) {
+                MessagePartsBlock(
+                    searchTarget = searchTarget?.takeIf { it.messageId == message.id.toString() },
+                    onSearchPosition = onSearchPosition,
+                    assistant = assistant,
+                    role = message.role,
+                    parts = message.parts,
+                    annotations = message.annotations,
+                    loading = loading,
+                    model = model,
+                    onToolApproval = onToolApproval,
+                    onToolAnswer = onToolAnswer,
+                    onUserMessageClick = if (message.role == MessageRole.USER) onEdit else null,
+                )
+
+                message.translation?.let { translation ->
+                    CollapsibleTranslationText(
+                        content = translation,
+                        onClickCitation = {}
+                    )
+                }
+            }
+
+            val showActions = if (lastMessage) {
+                !loading
+            } else {
+                message.parts.isEmptyUIMessage().not()
+            }
+
+            val motionScheme = MaterialTheme.motionScheme
+            AnimatedVisibility(
+                visible = showActions,
+                enter = slideInVertically(motionScheme.defaultSpatialSpec()) { it / 2 } +
+                    fadeIn(motionScheme.defaultEffectsSpec()),
+                exit = slideOutVertically(motionScheme.fastSpatialSpec()) { it / 2 } +
+                    fadeOut(motionScheme.fastEffectsSpec())
+            ) {
+                Column(
+                    modifier = Modifier.animateContentSize()
+                ) {
+                    ChatMessageActionButtons(
+                        message = message,
+                        onRegenerate = onRegenerate,
+                        node = node,
+                        onUpdate = onUpdate,
+                        onOpenActionSheet = {
+                            showActionsSheet = true
+                        },
+                        onTranslate = onTranslate,
+                        onClearTranslation = onClearTranslation
+                    )
+                }
+            }
+
+            EditedFilesList(
                 parts = message.parts,
-                annotations = message.annotations,
-                loading = loading,
-                model = model,
-                onToolApproval = onToolApproval,
-                onToolAnswer = onToolAnswer,
-                onUserMessageClick = if (message.role == MessageRole.USER) onEdit else null,
+                assistant = assistant,
             )
 
-            message.translation?.let { translation ->
-                CollapsibleTranslationText(
-                    content = translation,
-                    onClickCitation = {}
-                )
+            ProvideTextStyle(textStyle) {
+                ChatMessageNerdLine(message = message)
             }
-        }
-
-        val showActions = if (lastMessage) {
-            !loading
-        } else {
-            message.parts.isEmptyUIMessage().not()
-        }
-
-        val motionScheme = MaterialTheme.motionScheme
-        AnimatedVisibility(
-            visible = showActions,
-            enter = slideInVertically(motionScheme.defaultSpatialSpec()) { it / 2 } +
-                fadeIn(motionScheme.defaultEffectsSpec()),
-            exit = slideOutVertically(motionScheme.fastSpatialSpec()) { it / 2 } +
-                fadeOut(motionScheme.fastEffectsSpec())
-        ) {
-            Column(
-                modifier = Modifier.animateContentSize()
-            ) {
-                ChatMessageActionButtons(
-                    message = message,
-                    onRegenerate = onRegenerate,
-                    node = node,
-                    onUpdate = onUpdate,
-                    onOpenActionSheet = {
-                        showActionsSheet = true
-                    },
-                    onTranslate = onTranslate,
-                    onClearTranslation = onClearTranslation
-                )
-            }
-        }
-
-        EditedFilesList(
-            parts = message.parts,
-            assistant = assistant,
-        )
-
-        ProvideTextStyle(textStyle) {
-            ChatMessageNerdLine(message = message)
         }
     }
     if (showActionsSheet) {
@@ -433,6 +435,7 @@ private fun MessagePartsBlock(
             is MessagePartBlock.ContentBlock -> key(block.index) {
                 when (val part = block.part) {
                     is UIMessagePart.Text -> {
+                        val streamingText = loading && role != MessageRole.USER && block.index == parts.lastIndex
                         val displayedText = remember(part.text, assistant?.regexes, role) {
                             part.text.replaceRegexes(
                                 assistant = assistant,
@@ -467,6 +470,7 @@ private fun MessagePartsBlock(
                                 ) {
                                     MarkdownBlock(
                                         content = displayedText,
+                                        streaming = streamingText,
                                         onClickCitation = handleClickCitation,
                                         searchTarget = partTarget,
                                         onSearchPosition = onSearchPosition,
@@ -483,6 +487,7 @@ private fun MessagePartsBlock(
                                     ) {
                                         MarkdownBlock(
                                             content = displayedText,
+                                            streaming = streamingText,
                                             onClickCitation = handleClickCitation,
                                             searchTarget = partTarget,
                                             onSearchPosition = onSearchPosition,
@@ -491,6 +496,7 @@ private fun MessagePartsBlock(
                                 } else {
                                     MarkdownBlock(
                                         content = displayedText,
+                                        streaming = streamingText,
                                         onClickCitation = handleClickCitation,
                                         searchTarget = partTarget,
                                         onSearchPosition = onSearchPosition,
@@ -501,15 +507,9 @@ private fun MessagePartsBlock(
                             }
                         }
 
-                        // 正文生成结束后再启用文本选择，避免选择范围随流式内容变化。
-                        // Markdown 的快照观察仍须留在 UI 线程，防止选择工具栏在后台
-                        // 重算状态，与主线程对 selectable 列表的访问发生冲突。
-                        if (loading) {
+                        // BetterText 的同一选择容器覆盖正文与代码，生成期间也可以选择。
+                        SelectableContent {
                             textContent()
-                        } else {
-                            SelectionContainer {
-                                textContent()
-                            }
                         }
                     }
 

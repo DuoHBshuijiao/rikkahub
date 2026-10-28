@@ -1,15 +1,12 @@
 package me.rerere.ui.markdown
 
-import androidx.compose.foundation.text.InlineTextContent
-import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -19,8 +16,12 @@ import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.util.fastForEach
+import me.rerere.bettertext.markdown.LocalMarkdownTextStyle
+import me.rerere.bettertext.markdown.MarkdownInline
+import me.rerere.bettertext.text.BetterInline
+import me.rerere.bettertext.text.BetterText
+import me.rerere.bettertext.text.appendInline
 
 internal class MarkdownContext(
     val theme: MarkdownTheme,
@@ -37,32 +38,31 @@ internal val LocalMarkdownContext = staticCompositionLocalOf<MarkdownContext> {
 @Composable
 internal fun InlineText(content: List<MarkdownInline>, modifier: Modifier = Modifier, path: String) {
     val context = LocalMarkdownContext.current
-    val style = LocalTextStyle.current
+    val style = LocalMarkdownTextStyle.current
+    val androidContext = LocalContext.current
     val density = LocalDensity.current
     val contentColor = style.color.takeOrElse { LocalContentColor.current }
-    val rendered = remember(content, context, style, density, contentColor) {
-        InlineTextBuilder(context, MarkdownInlineScope(style, density, contentColor)).build(content)
+    val rendered = remember(content, context, style, density, contentColor, androidContext) {
+        InlineTextBuilder(context, MarkdownInlineScope(style, density, contentColor, androidContext)).build(content)
     }
     MarkdownSearchText(
         text = remember(content) { content.searchText() },
         path = path,
         renderedOffset = rendered::renderedOffset,
     ) { highlight, onTextLayout ->
-        Text(
+        BetterText(
             text = rendered.text,
             modifier = modifier.then(highlight),
             inlineContent = rendered.inlineContent,
             onTextLayout = onTextLayout,
-            // 行内公式可能比一行文字高，固定行高会让它和上下行叠在一起
-            style = if (rendered.hasMathWidget) style.copy(lineHeight = TextUnit.Unspecified) else style,
+            style = style.copy(color = contentColor),
         )
     }
 }
 
 private class RenderedInlineText(
     val text: AnnotatedString,
-    val inlineContent: Map<String, InlineTextContent>,
-    val hasMathWidget: Boolean,
+    val inlineContent: Map<String, BetterInline>,
     val offsetShifts: List<Pair<Int, Int>>,
 ) {
     fun renderedOffset(offset: Int): Int = offset + (offsetShifts.lastOrNull { it.first <= offset }?.second ?: 0)
@@ -78,8 +78,7 @@ private class InlineTextBuilder(
     private val scope: MarkdownInlineScope,
 ) {
     private val builder = AnnotatedString.Builder()
-    private val inlineContent = mutableMapOf<String, InlineTextContent>()
-    private var hasMathWidget = false
+    private val inlineContent = mutableMapOf<String, BetterInline>()
     private var searchOffset = 0
     private val offsetShifts = mutableListOf<Pair<Int, Int>>()
 
@@ -89,7 +88,7 @@ private class InlineTextBuilder(
 
     fun build(content: List<MarkdownInline>): RenderedInlineText {
         append(content)
-        return RenderedInlineText(builder.toAnnotatedString(), inlineContent, hasMathWidget, offsetShifts)
+        return RenderedInlineText(builder.toAnnotatedString(), inlineContent, offsetShifts)
     }
 
     private fun append(nodes: List<MarkdownInline>) = nodes.fastForEach { append(it) }
@@ -102,6 +101,7 @@ private class InlineTextBuilder(
             }
             is MarkdownInline.Styled -> builder.withStyle(node.style) { append(node.children) }
             is MarkdownInline.Code -> {
+                context.components.inlineCodePrefix?.invoke(scope, node.code)?.let { appendWidget(it, "") }
                 builder.withStyle(context.theme.inlineCode) { append(node.code) }
                 searchOffset += node.code.length
             }
@@ -121,7 +121,15 @@ private class InlineTextBuilder(
 
     private fun appendText(text: String) {
         val offset = builder.length
-        builder.append(text)
+        val decorations = context.components.textDecorations?.invoke(scope, text).orEmpty()
+        var copied = 0
+        for (decoration in decorations.sortedBy { it.offset }) {
+            val at = decoration.offset.coerceIn(copied, text.length)
+            builder.append(text, copied, at)
+            appendWidget(decoration.item, "")
+            copied = at
+        }
+        builder.append(text, copied, text.length)
         val quoteStyle = context.theme.quotedText ?: return
         text.forEachIndexed { index, char ->
             val close = pendingQuoteClose
@@ -156,23 +164,17 @@ private class InlineTextBuilder(
     }
 
     private fun appendMath(math: MarkdownInline.Math) {
-        val widgets = context.components.inlineMath?.invoke(scope, math.formula).orEmpty()
-        if (widgets.isEmpty()) {
+        val item = context.components.inlineMath?.invoke(scope, math.formula)
+        if (item == null) {
             builder.withStyle(MATH_SOURCE_STYLE) { append(math.formula) }
-            return
-        }
-        hasMathWidget = true
-        widgets.forEachIndexed { index, widget ->
-            // 零宽空格给拆开的公式提供换行点
-            if (index > 0) builder.append('​')
-            appendWidget(widget, alternateText = math.formula)
+        } else {
+            appendWidget(item, alternateText = "\$${math.formula}\$")
         }
     }
 
-    private fun appendWidget(widget: MarkdownInlineWidget, alternateText: String) {
+    private fun appendWidget(widget: BetterInline, alternateText: String) {
         val id = "markdown:${inlineContent.size}"
-        inlineContent[id] = widget.toInlineTextContent()
-        // alternateText 不允许为空
-        builder.appendInlineContent(id, alternateText.ifEmpty { "�" })
+        inlineContent[id] = widget
+        builder.appendInline(id, alternateText)
     }
 }

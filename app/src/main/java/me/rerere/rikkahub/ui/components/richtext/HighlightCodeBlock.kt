@@ -22,8 +22,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.DisableSelection
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
@@ -47,18 +48,19 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import me.rerere.highlight.CodeHighlightText
-import me.rerere.highlight.CodeHighlighter
-import me.rerere.highlight.HighlightTextColorPalette
-import me.rerere.highlight.buildHighlightText
+import me.rerere.bettertext.highlight.CodeHighlighter
+import me.rerere.bettertext.highlight.HighlightTextColorPalette
+import me.rerere.bettertext.highlight.buildHighlightText
+import me.rerere.bettertext.highlight.rememberHighlightedCode
+import me.rerere.bettertext.text.BetterText
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
@@ -79,11 +81,11 @@ import me.rerere.rikkahub.ui.theme.JetbrainsMono
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toDp
 import me.rerere.ui.markdown.MarkdownSearchText
+import me.rerere.ui.markdown.SelectableContent
 import me.rerere.ui.markdown.currentMarkdownCodeSearchTarget
 import me.rerere.ui.webview.WebView
 import me.rerere.ui.webview.WebViewContentCache
 import me.rerere.ui.webview.rememberWebViewState
-import kotlin.time.Clock
 
 private const val COLLAPSE_LINES = 10
 private val PREVIEWABLE_LANGUAGES = setOf("html", "svg")
@@ -268,7 +270,7 @@ private fun CodeBlockWithLineNumbersWrapped(
         var offset = 0
         displayLines.map { line -> offset.also { offset += line.length + 1 } }
     }
-    SelectionContainer {
+    SelectableContent {
         Column {
             displayLines.forEachIndexed { index, line ->
                 Row(
@@ -286,15 +288,9 @@ private fun CodeBlockWithLineNumbersWrapped(
                         )
                     }
                     MarkdownSearchText(text = line, textOffset = lineOffsets[index]) { highlight, onTextLayout ->
-                        CodeHighlightText(
-                            code = line,
-                            language = language,
-                            fontSize = textStyle.fontSize,
-                            lineHeight = textStyle.lineHeight,
-                            colors = colorPalette,
-                            overflow = TextOverflow.Visible,
-                            softWrap = true,
-                            fontFamily = JetbrainsMono,
+                        BetterText(
+                            text = rememberHighlightedCode(line, language, colorPalette),
+                            style = codeTextStyle(textStyle),
                             modifier = Modifier.weight(1f).then(highlight),
                             onTextLayout = onTextLayout,
                         )
@@ -347,18 +343,12 @@ private fun CodeBlockDefault(
         }
 
         // 代码列
-        SelectionContainer {
+        SelectableContent {
             MarkdownSearchText(text = displayCode) { highlight, onTextLayout ->
-                CodeHighlightText(
-                    code = displayCode,
-                    language = language,
+                BetterText(
+                    text = rememberHighlightedCode(displayCode, language, colorPalette),
                     modifier = Modifier.animateContentSize().then(highlight),
-                    fontSize = textStyle.fontSize,
-                    lineHeight = textStyle.lineHeight,
-                    colors = colorPalette,
-                    overflow = TextOverflow.Visible,
-                    softWrap = autoWrap,
-                    fontFamily = JetbrainsMono,
+                    style = codeTextStyle(textStyle),
                     onTextLayout = onTextLayout,
                 )
             }
@@ -547,3 +537,12 @@ class HighlightCodeVisualTransformation(
         )
     }
 }
+
+@Composable
+private fun codeTextStyle(style: TextStyle): TextStyle = style.merge(
+    TextStyle(
+        color = style.color.takeOrElse { LocalContentColor.current },
+        fontFamily = JetbrainsMono,
+        fontFeatureSettings = "'calt' 0, 'liga' 0, 'clig' 0",
+    )
+)

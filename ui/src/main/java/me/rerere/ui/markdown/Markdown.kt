@@ -1,6 +1,7 @@
 package me.rerere.ui.markdown
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
@@ -15,6 +16,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.TextStyle
@@ -22,9 +24,11 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.conflate
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.withContext
+import me.rerere.bettertext.markdown.LocalMarkdownBlockPath
+import me.rerere.bettertext.markdown.Markdown as BetterMarkdown
+import me.rerere.bettertext.markdown.MarkdownDocument
 
 /**
  * 渲染 Markdown 文本，支持 GFM（表格、任务列表、删除线）、LaTeX 公式和内嵌 HTML。
@@ -43,12 +47,13 @@ fun Markdown(
     theme: MarkdownTheme = MarkdownDefaults.theme(style),
     components: MarkdownComponents = MarkdownDefaults.components,
     softBreakAsLineBreak: Boolean = true,
+    streaming: Boolean = false,
     onLinkClick: ((url: String) -> Unit)? = null,
     searchTarget: MarkdownSearchTarget? = null,
     onSearchPosition: (Rect) -> Unit = {},
 ) {
     Markdown(
-        document = rememberMarkdownDocument(content, softBreakAsLineBreak),
+        document = rememberMarkdownDocument(content, softBreakAsLineBreak, streaming),
         modifier = modifier,
         style = style,
         theme = theme,
@@ -82,6 +87,8 @@ fun Markdown(
             null
         }
     }
+    val resolvedStyle = LocalTextStyle.current.merge(style).let { it.copy(color = it.color.takeOrElse { LocalContentColor.current }) }
+    val renderedComponents = remember(components) { components.withApplicationText() }
     val context = remember(theme, components, linkListener) {
         MarkdownContext(theme, components, linkListener)
     }
@@ -93,8 +100,15 @@ fun Markdown(
         LocalMarkdownSearch provides search,
         LocalMarkdownBlockPath provides "",
     ) {
-        ProvideTextStyle(style) {
-            MarkdownBlocks(blocks = document.blocks, modifier = modifier)
+        ProvideTextStyle(resolvedStyle) {
+            BetterMarkdown(
+                document = document,
+                modifier = modifier,
+                style = resolvedStyle,
+                theme = theme,
+                components = renderedComponents,
+                onLinkClick = onLinkClick,
+            )
         }
     }
 }
@@ -108,24 +122,43 @@ fun Markdown(
  * 更新比解析快时只解析最新的内容，中间的版本直接跳过。
  */
 @Composable
-fun rememberMarkdownDocument(content: String, softBreakAsLineBreak: Boolean = true): MarkdownDocument {
-    val state = remember(softBreakAsLineBreak) {
-        mutableStateOf(parseMarkdown(content, softBreakAsLineBreak))
-    }
-    val currentContent by rememberUpdatedState(content)
-    LaunchedEffect(state) {
-        snapshotFlow { currentContent }
+fun rememberMarkdownDocument(
+    content: String,
+    softBreakAsLineBreak: Boolean = true,
+    streaming: Boolean = false,
+): MarkdownDocument {
+    val parser = remember(softBreakAsLineBreak) { MarkdownDocumentParser(softBreakAsLineBreak) }
+    val state = remember(parser) { mutableStateOf(parser.parse(content, streaming)) }
+    val currentInput by rememberUpdatedState(MarkdownInput(content, streaming))
+    LaunchedEffect(parser, state) {
+        snapshotFlow { currentInput }
             .conflate()
-            .filter { it != state.value.source }
-            .mapNotNull { source ->
-                withContext(Dispatchers.Default) {
-                    runCatching { parseMarkdown(source, softBreakAsLineBreak) }.getOrNull()
+            .mapNotNull { input ->
+                val document = withContext(Dispatchers.Default) {
+                    runCatching { parser.parse(input.content, input.streaming) }.getOrNull()
                 }
+                // A completed old parse must not replace newer content or a changed streaming state.
+                document.takeIf { currentInput == input }
             }
             .collect { state.value = it }
     }
     return state.value
 }
+
+private data class MarkdownInput(val content: String, val streaming: Boolean)
+
+private fun MarkdownComponents.withApplicationText() = MarkdownComponents(
+    codeBlock = codeBlock,
+    table = table,
+    image = image,
+    mathBlock = mathBlock,
+    details = details,
+    inlineMath = inlineMath,
+    inlineLink = inlineLink,
+    inlineCodePrefix = inlineCodePrefix,
+    textDecorations = textDecorations,
+    inlineText = { content, modifier, path -> InlineText(content, modifier, path) },
+)
 
 @Preview(showBackground = true)
 @Composable

@@ -1,102 +1,68 @@
 package me.rerere.ui.markdown
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import kotlin.math.max
+import me.rerere.bettertext.markdown.LocalMarkdownBlockPath
+import me.rerere.bettertext.markdown.MarkdownBlock
+import me.rerere.bettertext.markdown.MarkdownInline
+import me.rerere.bettertext.markdown.MarkdownInlineContent
+import me.rerere.bettertext.markdown.TableCell
+import me.rerere.bettertext.text.BetterText
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Image02
+import me.rerere.ui.table.DataTable
 
-/** Markdown 的视觉参数 */
-@Immutable
-data class MarkdownTheme(
-    /** h1 ~ h6 的文字样式，会合并到正文样式上 */
-    val headings: List<TextStyle>,
-    val link: SpanStyle,
-    val inlineCode: SpanStyle,
-    /** 块与块之间的间距 */
-    val blockSpacing: Dp,
-    /** 列表符号、序号和任务复选框的颜色 */
-    val markerColor: Color,
-    /** 引用块左侧竖线的颜色 */
-    val quoteColor: Color,
-    val dividerColor: Color,
-    /** 正文里引号（"…"、“…”、「…」、『…』）括起来的文字的样式，为 null 时不高亮 */
-    val quotedText: SpanStyle? = null,
-)
-
-/** 嵌在文本流里的自定义内容，按 [placeholder] 的尺寸占位 */
-@Immutable
-class MarkdownInlineWidget(
-    val placeholder: Placeholder,
-    val content: @Composable () -> Unit,
-)
-
-/** 构建行内自定义内容时可用的环境信息 */
-@Immutable
-class MarkdownInlineScope(
-    /** 所在段落的文字样式 */
-    val style: TextStyle,
-    val density: Density,
-    val contentColor: Color,
-)
-
-/**
- * 可替换的渲染插槽。组件本身不带图片加载、代码高亮和公式排版，这些由使用方通过插槽接入。
- *
- * 实例应当保持稳定（定义为顶层常量或用 remember 包住），否则每次重组都会重建全部文本。
- */
-@Immutable
-class MarkdownComponents(
-    val codeBlock: @Composable (block: MarkdownBlock.CodeBlock) -> Unit = { MarkdownDefaults.CodeBlock(it) },
-    /** link 不为空表示图片被包在链接里 */
-    val image: @Composable (image: MarkdownInline.Image, link: String?) -> Unit = { image, link ->
-        MarkdownDefaults.Image(image, link)
-    },
-    val mathBlock: @Composable (formula: String) -> Unit = { MarkdownDefaults.MathBlock(it) },
-    val table: @Composable (table: MarkdownBlock.Table) -> Unit = { MarkdownDefaults.Table(it) },
-    /**
-     * 行内公式。返回多个时会在它们之间允许换行，用于把过长的公式拆开；
-     * 为 null 或返回空列表时以等宽字体显示公式源码。
-     */
-    val inlineMath: (MarkdownInlineScope.(formula: String) -> List<MarkdownInlineWidget>)? = null,
-    /** 自定义某些链接的行内渲染（例如引用角标），返回 null 时按普通链接处理 */
-    val inlineLink: (MarkdownInlineScope.(link: MarkdownInline.Link) -> MarkdownInlineWidget?)? = null,
-)
+typealias MarkdownTheme = me.rerere.bettertext.markdown.MarkdownTheme
+typealias MarkdownComponents = me.rerere.bettertext.markdown.MarkdownComponents
+typealias MarkdownInlineScope = me.rerere.bettertext.markdown.MarkdownInlineScope
 
 object MarkdownDefaults {
-    val components = MarkdownComponents()
+    /** 代码块、图片、表格和折叠块的 Material 3 默认实现；公式没有注册，显示源码 */
+    val components = MarkdownComponents(
+        codeBlock = { CodeBlock(it) },
+        image = { image, link -> Image(image, link) },
+        table = { Table(it) },
+        details = { block, summary, content -> Details(block, summary, content) },
+    )
 
     private val HeadingScales = floatArrayOf(1.5f, 1.375f, 1.25f, 1.125f, 1f, 0.875f)
 
@@ -132,6 +98,46 @@ object MarkdownDefaults {
         }
     }
 
+    /** 根据 open 属性初始化折叠状态，正文更新时保留用户的展开选择。 */
+    @Composable
+    fun Details(
+        block: MarkdownBlock.Details,
+        summary: @Composable () -> Unit,
+        content: @Composable () -> Unit,
+        modifier: Modifier = Modifier,
+    ) {
+        // 流式输出中 open 属性可能后到；只在它变化时重新初始化状态。
+        var expanded by rememberSaveable(block.open) { mutableStateOf(block.open) }
+        val path = LocalMarkdownBlockPath.current
+        val targetPath = LocalMarkdownSearch.current?.target?.segmentPath
+        val showContent = expanded || (targetPath?.startsWith("$path/") == true && targetPath != "$path/summary")
+        val rotation by animateFloatAsState(if (showContent) 90f else 0f)
+        Column(modifier) {
+            Row(
+                modifier = Modifier
+                    .clip(MaterialTheme.shapes.small)
+                    .clickable { expanded = !expanded }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = HugeIcons.ArrowRight01,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp).rotate(rotation),
+                )
+                Column(Modifier.weight(1f, fill = false)) {
+                    summary()
+                }
+            }
+            AnimatedVisibility(visible = showContent) {
+                Column(Modifier.padding(start = 22.dp, top = 6.dp)) {
+                    content()
+                }
+            }
+        }
+    }
+
     /** 不带语法高亮的代码块 */
     @Composable
     fun CodeBlock(block: MarkdownBlock.CodeBlock, modifier: Modifier = Modifier) {
@@ -151,15 +157,16 @@ object MarkdownDefaults {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Box(Modifier.horizontalScroll(rememberScrollState())) {
-                    MarkdownSearchText(text = block.code) { highlight, onTextLayout ->
-                        Text(
-                            text = block.code,
-                            modifier = highlight,
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                            softWrap = false,
-                            onTextLayout = onTextLayout,
-                        )
+                SelectableContent {
+                    androidx.compose.foundation.layout.Box(Modifier.horizontalScroll(rememberScrollState())) {
+                        MarkdownSearchText(text = block.code) { highlight, onTextLayout ->
+                            BetterText(
+                                text = block.code,
+                                modifier = highlight,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                onTextLayout = onTextLayout,
+                            )
+                        }
                     }
                 }
             }
@@ -207,23 +214,52 @@ object MarkdownDefaults {
         outerBorder: BorderStroke? = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shape: Shape = MaterialTheme.shapes.small,
     ) {
-        MarkdownTable(table, modifier, outerBorder, shape)
-    }
-
-    /** 以等宽字体显示公式源码 */
-    @Composable
-    fun MathBlock(formula: String, modifier: Modifier = Modifier) {
-        Box(
-            modifier = modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = formula,
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                fontFamily = FontFamily.Monospace,
-            )
+        val columnCount = max(table.header.size, table.rows.maxOfOrNull { it.size } ?: 0)
+        val path = LocalMarkdownBlockPath.current
+        val headers: List<@Composable () -> Unit> = table.header.mapIndexed { index, cell ->
+            @Composable {
+                CompositionLocalProvider(LocalMarkdownBlockPath provides "$path/header/$index") {
+                    TableCellContent(cell, table.alignments.getOrNull(index), FontWeight.SemiBold)
+                }
+            }
         }
+        val rows: List<List<@Composable () -> Unit>> = table.rows.mapIndexed { rowIndex, row ->
+            row.mapIndexed { index, cell ->
+                @Composable {
+                    CompositionLocalProvider(LocalMarkdownBlockPath provides "$path/row/$rowIndex/$index") {
+                        TableCellContent(cell, table.alignments.getOrNull(index), null)
+                    }
+                }
+            }
+        }
+        DataTable(
+            headers = headers,
+            rows = rows,
+            modifier = modifier,
+            columnMinWidths = List(columnCount) { 80.dp },
+            columnMaxWidths = List(columnCount) { 200.dp },
+            columnAlignments = List(columnCount) { index ->
+                table.alignments.getOrNull(index)?.toCellAlignment() ?: Alignment.CenterStart
+            },
+            bodyCellAlignment = { row, column ->
+                table.rows.getOrNull(row)?.getOrNull(column)?.style?.textAlign?.toCellAlignment()
+            },
+            outerBorder = outerBorder,
+            shape = shape,
+        )
     }
 }
 
-internal fun MarkdownInlineWidget.toInlineTextContent() = InlineTextContent(placeholder) { content() }
+private fun TextAlign.toCellAlignment(): Alignment? = when (this) {
+    TextAlign.Unspecified -> null
+    TextAlign.Center -> Alignment.Center
+    TextAlign.End, TextAlign.Right -> Alignment.CenterEnd
+    else -> Alignment.CenterStart
+}
+
+@Composable
+private fun TableCellContent(cell: TableCell, columnAlign: TextAlign?, fontWeight: FontWeight?) {
+    val columnStyle = TextStyle(fontWeight = fontWeight, textAlign = columnAlign ?: TextAlign.Unspecified)
+    // 单元格自己的样式优先于列的对齐方式和表头的字重；列宽由内容决定，单元格在列内的对齐交给表格
+    MarkdownInlineContent(cell.content, style = columnStyle.merge(cell.style))
+}

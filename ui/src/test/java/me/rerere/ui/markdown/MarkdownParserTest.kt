@@ -4,20 +4,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
-import me.rerere.ui.markdown.MarkdownBlock.CodeBlock
-import me.rerere.ui.markdown.MarkdownBlock.Container
-import me.rerere.ui.markdown.MarkdownBlock.Details
-import me.rerere.ui.markdown.MarkdownBlock.Heading
-import me.rerere.ui.markdown.MarkdownBlock.ListBlock
-import me.rerere.ui.markdown.MarkdownBlock.Paragraph
-import me.rerere.ui.markdown.MarkdownBlock.Quote
-import me.rerere.ui.markdown.MarkdownBlock.Table
-import me.rerere.ui.markdown.MarkdownInline.Code
-import me.rerere.ui.markdown.MarkdownInline.Image
-import me.rerere.ui.markdown.MarkdownInline.Link
-import me.rerere.ui.markdown.MarkdownInline.Math
-import me.rerere.ui.markdown.MarkdownInline.Styled
-import me.rerere.ui.markdown.MarkdownInline.Text
+import me.rerere.bettertext.markdown.MarkdownBlock
+import me.rerere.bettertext.markdown.MarkdownBlock.CodeBlock
+import me.rerere.bettertext.markdown.MarkdownBlock.Container
+import me.rerere.bettertext.markdown.MarkdownBlock.Details
+import me.rerere.bettertext.markdown.MarkdownBlock.Heading
+import me.rerere.bettertext.markdown.MarkdownBlock.ListBlock
+import me.rerere.bettertext.markdown.MarkdownBlock.Paragraph
+import me.rerere.bettertext.markdown.MarkdownBlock.Quote
+import me.rerere.bettertext.markdown.MarkdownBlock.Table
+import me.rerere.bettertext.markdown.MarkdownInline.Code
+import me.rerere.bettertext.markdown.MarkdownInline.Image
+import me.rerere.bettertext.markdown.MarkdownInline.Link
+import me.rerere.bettertext.markdown.MarkdownInline.Math
+import me.rerere.bettertext.markdown.MarkdownInline.Styled
+import me.rerere.bettertext.markdown.MarkdownInline.Text
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -342,11 +343,17 @@ class MarkdownParserTest {
 
     @Test
     fun `css values`() {
-        assertEquals(Color(0x80, 0x00, 0xFF, 0x80), parseCssColor("rgba(128, 0, 255, 0.5)"))
-        assertEquals(Color(0x11, 0x22, 0x33, 0xFF), parseCssColor("#123"))
-        assertEquals(Color(0xFF008000), parseCssColor("Green"))
-        assertNull(parseCssColor("#12"))
-        assertNull(parseSpanStyle("unknown: 1"))
-        assertEquals(1.5f, parseSpanStyle("font-size: 150%")!!.fontSize.value)
+        assertEquals(Color(0x80, 0x00, 0xFF, 0x80), colorFromRenderedHtml("rgba(128, 0, 255, 0.5)"))
+        assertEquals(Color(0x11, 0x22, 0x33, 0xFF), colorFromRenderedHtml("#123"))
+        assertEquals(Color(0xFF008000), colorFromRenderedHtml("Green"))
+        assertNull(colorFromRenderedHtml("#12"))
+        assertNull(styleFromRenderedHtml("unknown: 1"))
+        assertEquals(1.5f, styleFromRenderedHtml("font-size: 150%")!!.fontSize.value)
     }
+    // Exercise color parsing through the public parser rather than its private implementation.
+    private fun colorFromRenderedHtml(value: String): Color? =
+        styleFromRenderedHtml("color: $value")?.color
+
+    private fun styleFromRenderedHtml(value: String) =
+        (single<Paragraph>("<span style=\"$value\">text</span>").content.singleOrNull() as? Styled)?.style
 }

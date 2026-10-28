@@ -19,9 +19,13 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.text.TextLayoutResult
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import me.rerere.bettertext.markdown.LocalMarkdownBlockPath
+import me.rerere.bettertext.markdown.MarkdownBlock
+import me.rerere.bettertext.markdown.MarkdownDocument
+import me.rerere.bettertext.markdown.MarkdownInline
+import me.rerere.bettertext.text.BetterTextLayoutResult
 
 /** A stable address in the displayed document, independent of font size and line wrapping. */
 data class MarkdownSearchTarget(
@@ -40,7 +44,6 @@ internal class MarkdownSearchContext(
 )
 
 internal val LocalMarkdownSearch = staticCompositionLocalOf<MarkdownSearchContext?> { null }
-internal val LocalMarkdownBlockPath = staticCompositionLocalOf { "" }
 
 /**
  * Walks the same text slots as MarkdownBlocks. Markup, URLs, image alt text and rendered math
@@ -116,26 +119,26 @@ fun MarkdownSearchText(
     path: String = "${LocalMarkdownBlockPath.current}/code",
     // Maps searchable text offsets to the AnnotatedString's offsets around inline widgets.
     renderedOffset: (Int) -> Int = { it },
-    content: @Composable (Modifier, (TextLayoutResult) -> Unit) -> Unit,
+    content: @Composable (Modifier, ((BetterTextLayoutResult) -> Unit)?) -> Unit,
 ) {
     val search = LocalMarkdownSearch.current
     val target = search?.target?.takeIf {
         it.segmentPath == path && it.start < textOffset + text.length && it.end > textOffset
     }
     if (target == null) {
-        content(Modifier, {})
+        content(Modifier, null)
         return
     }
     val start = (target.start - textOffset).coerceAtLeast(0)
     val end = (target.end - textOffset).coerceAtMost(text.length)
     val expectedOffset = (textOffset - target.start).coerceAtLeast(0)
     if (start >= end || !text.regionMatches(start, target.matchedText, expectedOffset, end - start)) {
-        content(Modifier, {})
+        content(Modifier, null)
         return
     }
     val anchor = target.start >= textOffset
     val geometry = remember(text, target.requestId) { SearchTextGeometry() }
-    var layout by remember(text, target.requestId) { mutableStateOf<TextLayoutResult?>(null) }
+    var layout by remember(text, target.requestId) { mutableStateOf<BetterTextLayoutResult?>(null) }
     var relocated by remember(target.requestId) { mutableStateOf(false) }
     var highlightReady by remember(target.requestId) { mutableStateOf(false) }
     val requester = remember { BringIntoViewRequester() }
@@ -182,8 +185,8 @@ fun MarkdownSearchText(
                 drawContent()
             },
         { result ->
-            val renderedStart = renderedOffset(start).coerceIn(0, result.layoutInput.text.length)
-            val renderedEnd = renderedOffset(end).coerceIn(renderedStart, result.layoutInput.text.length)
+            val renderedStart = renderedOffset(start).coerceIn(0, result.text.length)
+            val renderedEnd = renderedOffset(end).coerceIn(renderedStart, result.text.length)
             if (renderedStart < renderedEnd) {
                 geometry.path = result.getPathForRange(renderedStart, renderedEnd)
                 val line = result.getLineForOffset(renderedStart)
