@@ -173,12 +173,13 @@ internal fun rememberChatAttachmentPickerActions(
     if (showFilePicker) {
         ChatFilePickerSheet(
             workspaceId = workspaceId,
+            existingAttachments = inputState.messageContent,
             onPickLocal = {
                 showFilePicker = false
                 filePickerLauncher.launch(arrayOf("*/*"))
             },
-            onFilesAdded = { documents ->
-                inputState.addFiles(documents)
+            onAttachmentsAdded = { attachments ->
+                inputState.messageContent = inputState.messageContent + attachments
                 showFilePicker = false
                 onAttachmentAdded()
             },

@@ -156,6 +156,36 @@ class ManagedFileCleanupTest {
         assertFalse(attachment.disk().exists())
     }
 
+    @Test fun `reused attachment survives draft removal and deleting either conversation until the final reference is gone`() = runTest {
+        val shared = file("reused 图 #%.png")
+        val url = shared.disk().toURI().toASCIIString()
+        val original = JsonInstant.encodeToString(listOf(UIMessage.user("").copy(
+            parts = listOf(UIMessagePart.Image(url)),
+        )))
+        val reused = JsonInstant.encodeToString(listOf(UIMessage.user("").copy(
+            parts = listOf(UIMessagePart.Image(url)),
+        )))
+        storedMessages = listOf(original)
+        var draft = setOf(shared.url())
+        runtime.register { RuntimeFileUsage(draft) }
+        val cleanup = cleaner()
+        draft = emptySet()
+        cleanup.recycle(listOf(shared.url()))
+        assertTrue(shared.disk().isFile)
+        storedMessages = listOf(original, reused)
+        cleanup.recycle(listOf(shared.url()))
+        assertTrue(shared.disk().isFile)
+        storedMessages = listOf(reused)
+        cleanup.recycle(listOf(shared.url()))
+        assertTrue(shared.disk().isFile)
+        storedMessages = listOf(original)
+        cleanup.recycle(listOf(shared.url()))
+        assertTrue(shared.disk().isFile)
+        storedMessages = emptyList()
+        cleanup.recycle(listOf(shared.url()))
+        assertFalse(shared.disk().exists())
+    }
+
     @Test fun `draft queue submitting and generation providers protect cleanup and unregister on disposal`() = runTest {
         val files = listOf(file("draft.png"), file("queue.png"), file("submitting.png"), file("generation.png"))
         var current = files.map { it.url() }.toSet()

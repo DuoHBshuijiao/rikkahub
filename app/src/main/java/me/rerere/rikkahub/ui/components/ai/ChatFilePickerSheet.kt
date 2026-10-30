@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
@@ -64,15 +66,16 @@ import me.rerere.workspace.WorkspaceLayout
 import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.compose.koinInject
 
-private enum class ChatFilePickerPage { SOURCE, WORKSPACES, FILES }
+private enum class ChatFilePickerPage { SOURCE, WORKSPACES, FILES, INTERNAL }
 
 private data class SelectedWorkspaceFile(val area: WorkspaceStorageArea, val entry: WorkspaceFileEntry)
 
 @Composable
 internal fun ChatFilePickerSheet(
     workspaceId: String?,
+    existingAttachments: List<UIMessagePart>,
     onPickLocal: () -> Unit,
-    onFilesAdded: (List<UIMessagePart.Document>) -> Unit,
+    onAttachmentsAdded: (List<UIMessagePart>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val repository: WorkspaceRepository = koinInject()
@@ -92,10 +95,11 @@ internal fun ChatFilePickerSheet(
     var error by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableStateOf(0) }
     var importing by remember { mutableStateOf(false) }
+    val storedPickerState = remember { StoredAttachmentPickerState() }
 
     fun goBack() {
         when {
-            importing -> onDismiss()
+            importing || storedPickerState.adding -> onDismiss()
             page == ChatFilePickerPage.FILES && path.isNotEmpty() ->
                 path = path.substringBeforeLast('/', "")
             page == ChatFilePickerPage.FILES -> page = ChatFilePickerPage.WORKSPACES
@@ -131,7 +135,7 @@ internal fun ChatFilePickerSheet(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (page != ChatFilePickerPage.SOURCE) {
-                    IconButton(onClick = { goBack() }, enabled = !importing) {
+                    IconButton(onClick = { goBack() }, enabled = !importing && !storedPickerState.adding) {
                         Icon(HugeIcons.ArrowLeft01, contentDescription = "返回")
                     }
                 }
@@ -140,6 +144,7 @@ internal fun ChatFilePickerSheet(
                         ChatFilePickerPage.SOURCE -> "添加文件"
                         ChatFilePickerPage.WORKSPACES -> "选择工作区"
                         ChatFilePickerPage.FILES -> workspace?.name ?: "工作区文件"
+                        ChatFilePickerPage.INTERNAL -> "内部储存"
                     },
                     style = MaterialTheme.typography.titleLargeEmphasized,
                     maxLines = 1,
@@ -148,7 +153,9 @@ internal fun ChatFilePickerSheet(
             }
 
             when (page) {
-                ChatFilePickerPage.SOURCE -> CardGroup {
+                ChatFilePickerPage.SOURCE -> CardGroup(
+                    modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                ) {
                     item(
                         onClick = {
                             page = if (workspace != null) ChatFilePickerPage.FILES else ChatFilePickerPage.WORKSPACES
@@ -163,7 +170,21 @@ internal fun ChatFilePickerSheet(
                         headlineContent = { Text("从本地上传") },
                         supportingContent = { Text("使用系统文件选择器") },
                     )
+                    item(
+                        onClick = { page = ChatFilePickerPage.INTERNAL },
+                        leadingContent = { CardGroupIcon(HugeIcons.Files02) },
+                        headlineContent = { Text("从内部储存添加") },
+                        supportingContent = { Text("复用应用内已保存的图片和文档") },
+                    )
                 }
+
+                ChatFilePickerPage.INTERNAL -> StoredAttachmentPicker(
+                    state = storedPickerState,
+                    filesManager = filesManager,
+                    existingAttachments = existingAttachments,
+                    onAttachmentsAdded = onAttachmentsAdded,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
 
                 ChatFilePickerPage.WORKSPACES -> {
                     LazyColumn(
@@ -315,7 +336,7 @@ internal fun ChatFilePickerSheet(
                                             )
                                         }
                                     }
-                                    onFilesAdded(documents)
+                                    onAttachmentsAdded(documents)
                                     delivered = true
                                 } catch (e: CancellationException) {
                                     throw e
