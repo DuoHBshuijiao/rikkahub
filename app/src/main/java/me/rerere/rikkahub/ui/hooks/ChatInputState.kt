@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import me.rerere.ai.ui.UIMessagePart
@@ -13,6 +14,8 @@ class ChatInputState {
     val textContent = TextFieldState()
     var messageContent by mutableStateOf(listOf<UIMessagePart>())
     var editingMessage by mutableStateOf<Uuid?>(null)
+    var editSession by mutableIntStateOf(0)
+        private set
 
     /** 编辑中的消息允许改思考内容时不为 null，见 [setContents] */
     var editingReasoning by mutableStateOf<TextFieldState?>(null)
@@ -21,6 +24,7 @@ class ChatInputState {
     private var editingAttachmentUrls: Set<String> = emptySet()
 
     fun clearInput() {
+        editSession++
         textContent.setTextAndPlaceCursorAtEnd("")
         messageContent = emptyList()
         editingMessage = null
@@ -40,6 +44,7 @@ class ChatInputState {
     }
 
     fun setContents(contents: List<UIMessagePart>) {
+        editSession++
         val lastTextIndex = contents.indexOfLast { it is UIMessagePart.Text }
         val text = if (lastTextIndex >= 0) {
             (contents[lastTextIndex] as UIMessagePart.Text).text
@@ -49,7 +54,8 @@ class ChatInputState {
         textContent.setTextAndPlaceCursorAtEnd(text)
         val reasoning = contents.editableReasoningOrNull()
         editingReasoning = reasoning?.let { TextFieldState(it.reasoning) }
-        messageContent = contents.filter { it !is UIMessagePart.Text && (reasoning == null || it !is UIMessagePart.Reasoning) }
+        messageContent =
+            contents.filter { it !is UIMessagePart.Text && (reasoning == null || it !is UIMessagePart.Reasoning) }
         editingParts = contents
         editingAttachmentUrls = contents.mapNotNull { it.attachmentUrlOrNull() }.toSet()
     }

@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -28,7 +27,6 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,8 +36,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
-import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,8 +43,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -75,8 +69,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
-import me.rerere.ui.toast.ToastType
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
@@ -90,6 +82,7 @@ import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowUp02
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Fullscreen
+import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
@@ -103,18 +96,23 @@ import me.rerere.rikkahub.ui.components.ai.completion.ChatCompletionContext
 import me.rerere.rikkahub.ui.components.ai.completion.ChatCompletionItem
 import me.rerere.rikkahub.ui.components.ai.completion.ChatCompletionList
 import me.rerere.rikkahub.ui.components.ai.completion.ChatCompletionProvider
+import me.rerere.rikkahub.ui.components.ui.EditorPlaceholder
+import me.rerere.rikkahub.ui.components.ui.EditorTextField
+import me.rerere.rikkahub.ui.components.ui.FullscreenTextEditor
 import me.rerere.rikkahub.ui.components.ui.KeepScreenOn
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionRecordAudio
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
+import me.rerere.rikkahub.ui.components.ui.rememberLongTextEditorState
 import me.rerere.rikkahub.ui.context.LocalASRState
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
-import me.rerere.rikkahub.utils.SoundEffectPlayer
-import org.koin.compose.koinInject
 import me.rerere.rikkahub.ui.pages.chat.VoicePhase
 import me.rerere.rikkahub.ui.pages.chat.VoiceSessionState
+import me.rerere.rikkahub.utils.SoundEffectPlayer
+import me.rerere.ui.toast.ToastType
+import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
 
 @Composable
@@ -304,7 +302,6 @@ fun ChatInput(
                                     onlyIcon = true,
                                 )
                             }
-
                         }
 
                         ActionIconButton(
@@ -360,7 +357,6 @@ fun ChatInput(
                     }
                 }
             }
-
         }
     }
 
@@ -429,7 +425,8 @@ private fun ActionIconButton(
         color = Color.Transparent,
     ) {
         Box(
-            modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
             content()
         }
@@ -449,7 +446,8 @@ private fun TextInputRow(
         settings.getQuickMessagesOfAssistant(assistant)
     }
 
-    var isEditingReasoning by remember { mutableStateOf(false) }
+    val editor = rememberLongTextEditorState(state.textContent, state.editSession)
+    val reasoningEditor = state.editingReasoning?.let { rememberLongTextEditorState(it) }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -469,7 +467,10 @@ private fun TextInputRow(
                     Text(text = stringResource(R.string.editing))
                     Spacer(Modifier.weight(1f))
                     if (state.editingReasoning != null) {
-                        TextButton(onClick = { isEditingReasoning = true }) {
+                        TextButton(onClick = {
+                            editor.inline.pendingAnchor = editor.inline.anchor()
+                            reasoningEditor?.open()
+                        }) {
                             Text(stringResource(R.string.chat_input_edit_reasoning))
                         }
                     }
@@ -483,10 +484,12 @@ private fun TextInputRow(
         }
 
         var isFocused by remember { mutableStateOf(false) }
-        var isFullScreen by remember { mutableStateOf(false) }
         var completionList by remember { mutableStateOf<ChatCompletionList?>(null) }
         val receiveContentListener = remember(
-            settings.displaySetting.pasteLongTextAsFile, settings.displaySetting.pasteLongTextThreshold
+            state,
+            filesManager,
+            settings.displaySetting.pasteLongTextAsFile,
+            settings.displaySetting.pasteLongTextThreshold
         ) {
             ReceiveContentListener { transferableContent ->
                 when {
@@ -522,18 +525,21 @@ private fun TextInputRow(
             }
         }
 
-        LaunchedEffect(completionProviders, isFocused) {
-            if (!isFocused || completionProviders.isEmpty()) {
+        val fullscreenOpen = editor.isFullscreen || reasoningEditor?.isFullscreen == true
+        LaunchedEffect(completionProviders, isFocused, fullscreenOpen) {
+            if (!isFocused || fullscreenOpen || completionProviders.isEmpty()) {
                 completionList = null
                 return@LaunchedEffect
             }
 
-            snapshotFlow {
-                ChatCompletionContext(
-                    text = state.textContent.text.toString(),
-                    selection = state.textContent.selection,
-                )
-            }.collectLatest { context ->
+            var previousText: CharSequence? = null
+            var completionText = ""
+            snapshotFlow { state.textContent.text to state.textContent.selection }.collectLatest { (text, selection) ->
+                if (previousText != text) {
+                    previousText = text
+                    completionText = text.toString()
+                }
+                val context = ChatCompletionContext(text = completionText, selection = selection)
                 val lists = completionProviders.mapNotNull { provider ->
                     try {
                         provider.complete(context)
@@ -561,7 +567,7 @@ private fun TextInputRow(
             }
         }
 
-        completionList?.takeIf { it.items.isNotEmpty() }?.let { list ->
+        completionList?.takeIf { !fullscreenOpen && it.items.isNotEmpty() }?.let { list ->
             CompletionPopup(
                 completionList = list,
                 onItemClick = { item ->
@@ -571,69 +577,61 @@ private fun TextInputRow(
             )
         }
 
-        TextField(
-            state = state.textContent,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("chat_input")
-                .contentReceiver(receiveContentListener)
-                .onFocusChanged {
-                    isFocused = it.isFocused
-                },
-            shape = MaterialTheme.shapes.largeIncreased,
-            placeholder = {
-                Text(stringResource(R.string.chat_input_placeholder))
-            },
-            lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.Sentences,
-                imeAction = if (settings.displaySetting.sendOnEnter) ImeAction.Send else ImeAction.Default
-            ),
-            onKeyboardAction = {
-                if (settings.displaySetting.sendOnEnter && !state.isEmpty()) {
-                    onSendMessage()
-                }
-            },
-            colors = TextFieldDefaults.colors().copy(
-                unfocusedIndicatorColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent,
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-            ),
-            trailingIcon = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    if (isFocused) {
-                        IconButton(
-                            onClick = {
-                                isFullScreen = !isFullScreen
-                            }) {
-                            Icon(HugeIcons.Fullscreen, null)
-                        }
-                    }
-                }
-            },
-            leadingIcon = if (quickMessages.isNotEmpty()) {
-                {
-                    QuickMessageButton(quickMessages = quickMessages, state = state)
-                }
-            } else null,
-        )
-        if (isFullScreen) {
-            FullScreenEditor(
-                textState = state.textContent,
-                placeholder = stringResource(R.string.chat_input_placeholder),
-            ) {
-                isFullScreen = false
+        if (isFocused || state.isEditing() || fullscreenOpen) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                IconButton(onClick = { editor.open(search = true) }) { Icon(HugeIcons.Search01, "查找") }
+                IconButton(onClick = { editor.open() }) { Icon(HugeIcons.Fullscreen, "全屏编辑") }
             }
         }
-        val reasoningState = state.editingReasoning
-        if (isEditingReasoning && reasoningState != null) {
-            FullScreenEditor(textState = reasoningState, placeholder = stringResource(R.string.chat_input_reasoning_placeholder)) {
-                isEditingReasoning = false
-            }
+        if (fullscreenOpen) {
+            EditorPlaceholder(editor.inline)
+        } else {
+            EditorTextField(
+                state = state.textContent,
+                viewport = editor.inline,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("chat_input")
+                    .contentReceiver(receiveContentListener)
+                    .onFocusChanged {
+                        isFocused = it.isFocused
+                    },
+                placeholder = stringResource(R.string.chat_input_placeholder),
+                lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences,
+                    imeAction = if (settings.displaySetting.sendOnEnter) ImeAction.Send else ImeAction.Default
+                ),
+                onKeyboardAction = {
+                    if (settings.displaySetting.sendOnEnter && !state.isEmpty()) {
+                        onSendMessage()
+                    }
+                },
+                leadingIcon = if (quickMessages.isNotEmpty()) {
+                    {
+                        QuickMessageButton(quickMessages = quickMessages, state = state)
+                    }
+                } else {
+                    null
+                },
+            )
+        }
+        if (editor.isFullscreen) {
+            FullscreenTextEditor(
+                editor = editor,
+                label = if (state.isEditing()) "编辑消息" else "编辑草稿",
+                placeholder = stringResource(R.string.chat_input_placeholder),
+                testTag = "chat-input-fullscreen",
+                receiveContentListener = receiveContentListener,
+            )
+        }
+        if (reasoningEditor?.isFullscreen == true) {
+            FullscreenTextEditor(
+                editor = reasoningEditor,
+                label = stringResource(R.string.chat_input_edit_reasoning),
+                placeholder = stringResource(R.string.chat_input_reasoning_placeholder),
+                testTag = "chat-reasoning-fullscreen",
+            )
         }
     }
 }
@@ -725,10 +723,9 @@ private fun QuickMessageButton(
     state: ChatInputState,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    IconButton(
-        onClick = {
-            expanded = !expanded
-        }) {
+    IconButton(onClick = {
+        expanded = !expanded
+    }) {
         Icon(HugeIcons.Zap, null)
         DropdownMenu(
             expanded = expanded,
@@ -761,73 +758,6 @@ private fun QuickMessageButton(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FullScreenEditor(
-    textState: TextFieldState,
-    placeholder: String,
-    onDone: () -> Unit
-) {
-    BasicAlertDialog(
-        onDismissRequest = {
-            onDone()
-        },
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false, decorFitsSystemWindows = false
-        ),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .imePadding(),
-            verticalArrangement = Arrangement.Bottom
-        ) {
-            Surface(
-                modifier = Modifier
-                    .widthIn(max = 800.dp)
-                    .fillMaxHeight(0.9f),
-                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .fillMaxSize(),
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row {
-                        TextButton(
-                            onClick = {
-                                onDone()
-                            }) {
-                            Text(stringResource(R.string.chat_page_save))
-                        }
-                    }
-                    TextField(
-                        state = textState,
-                        modifier = Modifier
-                            .padding(bottom = 2.dp)
-                            .fillMaxSize(),
-                        shape = RoundedCornerShape(32.dp),
-                        placeholder = {
-                            Text(placeholder)
-                        },
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                        ),
-                        colors = TextFieldDefaults.colors().copy(
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                        ),
-                    )
                 }
             }
         }

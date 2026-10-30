@@ -6,50 +6,30 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.Fullscreen
+import me.rerere.hugeicons.stroke.Search01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.ui.toast.ToastType
@@ -86,9 +66,9 @@ fun TextArea(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
-    var isFullScreen by rememberSaveable { mutableStateOf(false) }
-    val editorScrollState = rememberScrollState()
-    val fullscreenScrollState = rememberScrollState()
+    val importSuccess = stringResource(R.string.text_area_import_success)
+    val importFailed = stringResource(R.string.text_area_import_failed)
+    val editor = rememberLongTextEditorState(state)
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -102,10 +82,10 @@ fun TextArea(
                             ?: error("Failed to read file")
                     }
                     state.setTextAndPlaceCursorAtEnd(content)
-                    toaster.show(context.getString(R.string.text_area_import_success), type = ToastType.Success)
+                    toaster.show(importSuccess, type = ToastType.Success)
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    val errorMessage = e.message ?: context.getString(R.string.text_area_import_failed)
+                    val errorMessage = e.message ?: importFailed
                     onImportError?.invoke(errorMessage) ?: toaster.show(
                         message = errorMessage,
                         type = ToastType.Error
@@ -129,15 +109,18 @@ fun TextArea(
             ) {
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f),
                 )
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
                 ) {
                     if (enableFullscreen) {
-                        IconButton(onClick = { isFullScreen = true }, enabled = enabled) {
+                        IconButton(onClick = { editor.open(search = true) }, enabled = enabled) {
+                            Icon(HugeIcons.Search01, "查找")
+                        }
+                        IconButton(onClick = { editor.open() }, enabled = enabled) {
                             Icon(HugeIcons.Fullscreen, stringResource(R.string.text_area_fullscreen_edit))
                         }
                     }
@@ -150,113 +133,36 @@ fun TextArea(
                     }
                 }
             }
+        }
 
-            // Multi-line text input
-            OutlinedTextField(
+        if (editor.isFullscreen) {
+            EditorPlaceholder(editor.inline)
+        } else {
+            EditorTextField(
                 state = state,
+                viewport = editor.inline,
                 modifier = Modifier
-                    .fillMaxWidth(),
-                placeholder = if (placeholder.isNotEmpty()) {
-                    { Text(placeholder) }
-                } else {
-                    null
-                },
+                    .fillMaxWidth().testTag("text-area-inline"),
+                placeholder = placeholder,
+                outlined = true,
                 lineLimits = TextFieldLineLimits.MultiLine(
                     minHeightInLines = minLines,
                     maxHeightInLines = maxLines
                 ),
                 enabled = enabled,
                 readOnly = readOnly,
-                scrollState = editorScrollState,
             )
         }
     }
 
     // Fullscreen editor dialog
-    if (isFullScreen) {
-        FullScreenTextEditor(
-            state = state,
+    if (editor.isFullscreen) {
+        FullscreenTextEditor(
+            editor = editor,
             label = label,
             placeholder = placeholder,
             readOnly = readOnly,
-            scrollState = fullscreenScrollState,
-            initialScroll = editorScrollState.value,
-            onDismiss = {
-                scope.launch { editorScrollState.scrollTo(fullscreenScrollState.value) }
-                isFullScreen = false
-            }
+            testTag = "text-area-fullscreen",
         )
-    }
-}
-
-@Composable
-private fun FullScreenTextEditor(
-    state: TextFieldState,
-    label: String,
-    placeholder: String,
-    readOnly: Boolean,
-    scrollState: androidx.compose.foundation.ScrollState,
-    initialScroll: Int,
-    onDismiss: () -> Unit
-) {
-    val focusRequester = remember { FocusRequester() }
-    var located by rememberSaveable { mutableStateOf(false) }
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(8.dp)
-                    .safeDrawingPadding()
-                    .imePadding()
-                    .fillMaxSize(),
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) {
-                        Text("完成")
-                    }
-                }
-                TextField(
-                    state = state,
-                    readOnly = readOnly,
-                    scrollState = scrollState,
-                    modifier = Modifier
-                        .focusRequester(focusRequester)
-                        .testTag("text-area-fullscreen")
-                        .fillMaxSize(),
-                    shape = RoundedCornerShape(16.dp),
-                    placeholder = if (placeholder.isNotEmpty()) {
-                        { Text(placeholder) }
-                    } else if (label.isNotEmpty()) {
-                        { Text(label) }
-                    } else {
-                        null
-                    },
-                    colors = TextFieldDefaults.colors().copy(
-                        unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                    ),
-                )
-                LaunchedEffect(Unit) {
-                    if (!located) {
-                        scrollState.scrollTo(initialScroll)
-                        located = true
-                    }
-                    if (!readOnly) focusRequester.requestFocus()
-                }
-            }
-        }
     }
 }

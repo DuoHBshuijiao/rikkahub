@@ -273,13 +273,15 @@ class WorkspaceCompletionProvider(
 
     private fun findWorkspaceMention(text: String, cursor: Int): WorkspaceMention? {
         if (cursor < 0 || cursor > text.length) return null
-        val prefix = text.substring(0, cursor)
-        val start = prefix.lastIndexOf('@')
+        if (cursor == 0) return null
+        val start = text.lastIndexOf('@', startIndex = cursor - 1)
         if (start < 0) return null
         if (start > 0 && !text[start - 1].isMentionBoundary()) return null
 
-        val query = prefix.substring(start + 1)
-        if (query.any { it.isWhitespace() }) return null
+        for (index in start + 1 until cursor) {
+            if (text[index].isWhitespace()) return null
+        }
+        val query = text.substring(start + 1, cursor)
         return WorkspaceMention(
             query = query,
             range = TextRange(start, cursor),
