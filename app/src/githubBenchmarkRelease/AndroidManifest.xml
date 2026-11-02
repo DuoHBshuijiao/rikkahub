@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- The profile plugin reuses the release build-type manifest. Register fixtures in the
+             variant overlay so this Activity is included only in the profileable GitHub APK. -->
+        <activity
+            android:name="me.rerere.rikkahub.benchmark.EditorBenchmarkActivity"
+            android:exported="true" />
+    </application>
+</manifest>
