@@ -30,12 +30,14 @@ internal fun rememberChatSearchGeometry(
     state: LazyListState,
     conversation: Conversation,
     target: SearchJumpTarget?,
-    topInset: Float,
-    bottomInset: Float,
+    topInset: () -> Float,
+    bottomInset: () -> Float,
     onError: () -> Unit,
 ): ChatSearchGeometry {
     val geometry = remember(target?.requestId) { ChatSearchGeometry() }
     val currentOnError by rememberUpdatedState(onError)
+    val currentTopInset by rememberUpdatedState(topInset)
+    val currentBottomInset by rememberUpdatedState(bottomInset)
     LaunchedEffect(target?.requestId) {
         if (target == null) return@LaunchedEffect
         val index = conversation.messageNodes.indexOfFirst { it.id.toString() == target.nodeId }
@@ -58,8 +60,8 @@ internal fun rememberChatSearchGeometry(
             withFrameNanos { }
             val viewport = geometry.viewport ?: return@repeat
             val match = geometry.match ?: return@repeat
-            val visibleTop = viewport.top + topInset
-            val visibleBottom = viewport.bottom - bottomInset
+            val visibleTop = viewport.top + currentTopInset()
+            val visibleBottom = viewport.bottom - currentBottomInset()
             val desiredTop = visibleTop + ((visibleBottom - visibleTop - match.height) * 0.25f).coerceAtLeast(0f)
             val delta = match.top - desiredTop
             if (abs(delta) < 2f) {

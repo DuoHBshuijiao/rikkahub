@@ -127,3 +127,65 @@ class LongTextEditorBenchmarks(
         }
     }
 }
+
+/** Keep IME timing separate from scrolling/search so setup and text insertion are not measured. */
+@RunWith(Parameterized::class)
+class LongTextEditorImeBenchmarks(
+    private val length: Int,
+    private val paragraphs: Boolean,
+    private val effect: String,
+) {
+    @get:Rule val rule = MacrobenchmarkRule()
+
+    @Test
+    fun keyboardTransitions() {
+        val arguments = InstrumentationRegistry.getArguments()
+        val packageName = checkNotNull(arguments.getString("targetAppId"))
+        rule.measureRepeated(
+            packageName = packageName,
+            metrics = listOf(FrameTimingMetric()),
+            compilationMode = CompilationMode.Partial(),
+            startupMode = StartupMode.WARM,
+            iterations = arguments.getString("editorIterations")?.toInt() ?: 5,
+            setupBlock = {
+                startActivityAndWait(
+                    Intent().setClassName(packageName, "me.rerere.rikkahub.benchmark.EditorBenchmarkActivity")
+                        .putExtra("chat", true)
+                        .putExtra("length", length)
+                        .putExtra("paragraphs", paragraphs)
+                        .putExtra("effect", effect),
+                )
+                awaitIme("ime-closed")
+                device.waitForIdle()
+            },
+        ) {
+            repeat(3) {
+                checkNotNull(device.wait(Until.findObject(By.res("chat_input")), 5_000)).click()
+                awaitIme("ime-open")
+                device.pressBack()
+                awaitIme("ime-closed")
+            }
+        }
+    }
+
+    private fun MacrobenchmarkScope.awaitIme(description: String) {
+        device.awaitEditorIme(description)
+    }
+
+    companion object {
+        @JvmStatic
+        @Parameterized.Parameters(name = "length={0,number,#},paragraphs={1},effect={2}")
+        fun scenarios(): List<Array<Any>> = buildList {
+            val arguments = InstrumentationRegistry.getArguments()
+            for (length in listOf(100, 10_000, 50_000)) {
+                if (arguments.getString("editorLength")?.toInt()?.let { it != length } == true) continue
+                for (paragraphs in listOf(true, false)) {
+                    for (effect in listOf("off", "blur", "glass")) {
+                        if (arguments.getString("editorEffect")?.let { it != effect } == true) continue
+                        add(arrayOf(length, paragraphs, effect))
+                    }
+                }
+            }
+        }
+    }
+}

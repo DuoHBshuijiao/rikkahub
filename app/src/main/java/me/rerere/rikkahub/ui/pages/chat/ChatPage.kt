@@ -488,6 +488,7 @@ private fun ChatPageContent(
         ) { innerPadding ->
             ChatList(
                 innerPadding = innerPadding,
+                isEditingMessage = inputState.isEditing(),
                 conversation = conversation,
                 state = chatListState,
                 loading = loadingJob != null,

@@ -155,6 +155,7 @@ fun ChatList(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
+    isEditingMessage: Boolean = false,
 ) {
     val previewListState = rememberLazyListState()
     val searchAssistant = settings.getAssistantOf(conversation)
@@ -254,7 +255,8 @@ fun ChatList(
                 onToggleFavorite = onToggleFavorite,
                 onConversationSystemPromptChange = onConversationSystemPromptChange,
                 onSelectMessage = onSelectMessage,
-                autoScroll = !selection.active,
+                autoScroll = !selection.active && !isEditingMessage,
+                isEditingMessage = isEditingMessage,
             )
         }
     }
@@ -262,10 +264,10 @@ fun ChatList(
 
 // 顶部渐隐：消息滚到标题栏下面时逐渐透明，从状态栏一直淡出到标题栏下沿之外，保证标题可读。
 // 让内容自己变透明而不是盖一层背景色，背景图和动态渐变背景才不会被盖住。
-private fun Modifier.topFadingEdge(height: Dp): Modifier = this
+private fun Modifier.topFadingEdge(height: () -> Dp): Modifier = this
     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
     .drawWithCache {
-        val fadeHeight = height.toPx()
+        val fadeHeight = height().toPx()
         val brush = Brush.verticalGradient(
             0f to Color.Transparent,
             0.6f to Color.Black.copy(alpha = 0.15f),
@@ -310,18 +312,20 @@ private fun ChatListNormal(
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
     onSelectMessage: (Uuid) -> Unit,
     autoScroll: Boolean,
+    isEditingMessage: Boolean,
 ) {
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
     var isRecentScroll by remember { mutableStateOf(false) }
     val conversationUpdated by rememberUpdatedState(conversation)
     val density = LocalDensity.current
+    val contentPadding = rememberChatListContentPadding(innerPadding, isEditingMessage)
     val searchGeometry = rememberChatSearchGeometry(
         state = state,
         conversation = conversation,
         target = searchTarget,
-        topInset = with(density) { (innerPadding.calculateTopPadding() + 56.dp).toPx() },
-        bottomInset = with(density) { innerPadding.calculateBottomPadding().toPx() },
+        topInset = { with(density) { (innerPadding.calculateTopPadding() + 56.dp).toPx() } },
+        bottomInset = { with(density) { innerPadding.calculateBottomPadding().toPx() } },
         onError = onSearchError,
     )
     val activity = LocalContext.current as? me.rerere.rikkahub.RouteActivity
@@ -357,7 +361,7 @@ private fun ChatListNormal(
     }
 
     // 自动跟随键盘滚动
-    ImeLazyListAutoScroller(lazyListState = state)
+    ImeLazyListAutoScroller(lazyListState = state, enabled = autoScroll)
 
     val assistant = remember(
         settings.assistants,
@@ -411,16 +415,13 @@ private fun ChatListNormal(
             LazyColumn(
                 state = state,
                 // 顶部留白放进 contentPadding，让消息可以滚动到透明标题栏下面
-                contentPadding = PaddingValues(16.dp) + PaddingValues(
-                    top = innerPadding.calculateTopPadding(),
-                    bottom = 32.dp + innerPadding.calculateBottomPadding(),
-                ),
+                contentPadding = contentPadding,
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
                     .fillMaxSize()
                     .onGloballyPositioned { searchGeometry.viewport = it.boundsInRoot() }
-                    .topFadingEdge(innerPadding.calculateTopPadding() + 24.dp)
+                    .topFadingEdge { innerPadding.calculateTopPadding() + 24.dp }
                     .hazeSource(state = hazeState),
             ) {
                 itemsIndexed(
