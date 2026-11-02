@@ -102,6 +102,31 @@ internal fun Conversation.cancelInterruptedTools(): Conversation? {
     return upsertMessage(lastNode.id, updatedMessage)
 }
 
+/** A new prompt abandons uncompleted tools on the selected branch, including a regenerated earlier reply. */
+internal fun Conversation.cancelToolsForImmediateMessage(): Conversation? {
+    var changed = false
+    val nodes = messageNodes.map { node ->
+        val message = node.currentMessage.finishPendingTools { tool ->
+            cancelToolByUser(tool).let { cancelled ->
+                if (tool.isPending && tool.toolName == ASK_USER_TOOL_NAME) {
+                    cancelled.copy(approvalState = ToolApprovalState.Denied("已跳过本次提问"))
+                } else {
+                    cancelled
+                }
+            }
+        }
+        if (message === node.currentMessage) {
+            node
+        } else {
+            changed = true
+            node.copy(messages = node.messages.mapIndexed { index, original ->
+                if (index == node.selectIndex) message else original
+            })
+        }
+    }
+    return if (changed) copy(messageNodes = nodes) else null
+}
+
 private fun cancelToolByUser(tool: UIMessagePart.Tool): UIMessagePart.Tool = tool.copy(
     output = listOf(
         UIMessagePart.Text(

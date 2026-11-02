@@ -7,6 +7,7 @@ import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -15,6 +16,34 @@ import org.junit.Test
 import kotlin.uuid.Uuid
 
 class ConversationMessagesTest {
+    @Test
+    fun `immediate prompt skips questions and finishes tools only on selected branches`() {
+        val pendingQuestion = UIMessage.assistant("").copy(parts = listOf(
+            UIMessagePart.Tool("ask", "ask_user", "{}", approvalState = ToolApprovalState.Pending),
+        ))
+        val executing = toolReply(ToolApprovalState.Approved)
+        val finished = executing.copy(parts = executing.getTools().map {
+            it.copy(output = listOf(UIMessagePart.Text("completed")))
+        })
+        val conversation = conversationOf(
+            MessageNode(messages = listOf(pendingQuestion, executing), selectIndex = 1),
+            pendingQuestion.toMessageNode(),
+            finished.toMessageNode(),
+            UIMessage.assistant("later reply").toMessageNode(),
+        )
+
+        val updated = conversation.cancelToolsForImmediateMessage()!!
+
+        assertTrue(updated.currentMessages[0].getTools().single().isExecuted)
+        val skipped = updated.currentMessages[1].getTools().single()
+        assertTrue(skipped.isExecuted)
+        assertEquals(ToolApprovalState.Denied("已跳过本次提问"), skipped.approvalState)
+        assertFalse(updated.isAwaitingToolApproval)
+        assertEquals(pendingQuestion, updated.messageNodes[0].messages[0])
+        assertEquals(finished, updated.currentMessages[2])
+        assertNull(updated.cancelToolsForImmediateMessage())
+    }
+
     @Test
     fun `ask user validates answers against the latest pending call before saving`() {
         val input = """{"questions":[{"id":"q","question":"语言？","selection_type":"single","options":["Kotlin"]}]}"""

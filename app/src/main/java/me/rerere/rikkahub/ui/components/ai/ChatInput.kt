@@ -134,6 +134,7 @@ fun ChatInput(
     onLongSendClick: () -> Unit,
     messageQueue: MessageQueueState = MessageQueueState(),
     onRemoveQueuedMessage: (Uuid) -> Unit = {},
+    onSendQueuedMessageNow: (Uuid) -> Unit = {},
     onBeginEditQueuedMessage: (Uuid) -> QueuedMessage? = { null },
     onFinishEditQueuedMessage: (Uuid, List<UIMessagePart>?) -> Unit = { _, _ -> },
     onResumeMessageQueue: () -> Unit = {},
@@ -228,6 +229,7 @@ fun ChatInput(
             MessageQueuePanel(
                 state = messageQueue,
                 onRemove = onRemoveQueuedMessage,
+                onSendNow = onSendQueuedMessageNow,
                 onBeginEdit = onBeginEditQueuedMessage,
                 onFinishEdit = onFinishEditQueuedMessage,
                 onResume = onResumeMessageQueue,

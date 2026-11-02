@@ -13,6 +13,69 @@ class MessageQueueTest {
     private fun text(value: String) = listOf(UIMessagePart.Text(value))
 
     @Test
+    fun `immediate send keeps attachments referenced until handover and preserves remaining order`() {
+        val queue = MessageQueue()
+        val reply = CompletableDeferred<String?>()
+        queue.enqueue(text("first"))
+        val parts = text("priority") + UIMessagePart.Image("file:///priority.png")
+        queue.enqueue(parts, answer = false, reply = reply)
+        queue.enqueue(text("last"))
+        val selected = queue.state.value.messages[1]
+
+        assertEquals(selected, queue.reserveImmediate(selected.id))
+        assertEquals(listOf("first", "priority", "last"), queue.state.value.messages.map {
+            (it.parts.first() as UIMessagePart.Text).text
+        })
+        assertNull(queue.takeNext())
+        assertNull(queue.reserveImmediate(selected.id))
+        assertNull(queue.beginEdit(selected.id))
+        assertNull(queue.finishEdit(selected.id, text("stale edit")))
+
+        val dispatched = queue.takeImmediate(selected.id)!!
+        assertEquals(parts, dispatched.parts)
+        assertFalse(dispatched.answer)
+        assertTrue(dispatched.reply === reply)
+        assertFalse(reply.isCompleted)
+        assertEquals(text("first"), queue.takeNext()!!.parts)
+        assertEquals(text("last"), queue.takeNext()!!.parts)
+        assertNull(queue.takeImmediate(selected.id))
+    }
+
+    @Test
+    fun `cancelling immediate handover leaves the paused queue and original position intact`() {
+        val queue = MessageQueue()
+        queue.enqueue(text("first"))
+        queue.enqueue(text("second"))
+        val selected = queue.state.value.messages.last()
+        queue.pause()
+        queue.reserveImmediate(selected.id)
+        queue.releaseImmediate(selected.id)
+
+        assertTrue(queue.state.value.paused)
+        assertNull(queue.state.value.sendingMessageId)
+        assertNull(queue.takeNext())
+        queue.reserveImmediate(selected.id)
+        assertEquals(selected, queue.takeImmediate(selected.id))
+        assertFalse(queue.state.value.paused)
+        assertEquals(text("first"), queue.takeNext()!!.parts)
+    }
+
+    @Test
+    fun `immediate send rejects editing and removed items`() {
+        val queue = MessageQueue()
+        queue.enqueue(text("draft"))
+        val id = queue.state.value.messages.single().id
+        queue.beginEdit(id)
+        assertNull(queue.reserveImmediate(id))
+        queue.finishEdit(id)
+        queue.reserveImmediate(id)
+        queue.remove(id)
+        assertNull(queue.takeImmediate(id))
+        assertNull(queue.state.value.sendingMessageId)
+        assertNull(queue.reserveImmediate(id))
+    }
+
+    @Test
     fun `editing a voice message preserves its reply observer and queue position`() {
         val queue = MessageQueue()
         val reply = CompletableDeferred<String?>()

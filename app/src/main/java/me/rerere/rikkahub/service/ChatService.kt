@@ -66,6 +66,7 @@ import me.rerere.rikkahub.data.model.DEFAULT_USER_PERSONA_ID
 import me.rerere.rikkahub.data.model.UserPersona
 import me.rerere.rikkahub.data.model.bindConfig
 import me.rerere.rikkahub.data.model.cancelInterruptedTools
+import me.rerere.rikkahub.data.model.cancelToolsForImmediateMessage
 import me.rerere.rikkahub.data.model.deleteMessage
 import me.rerere.rikkahub.data.model.editMessage
 import me.rerere.rikkahub.data.model.fillModelSnapshots
@@ -361,8 +362,26 @@ class ChatService(
         sessionManager.getMessageQueueFlow(conversationId)
 
     fun removeQueuedMessage(conversationId: Uuid, messageId: Uuid) {
-        sessionManager.get(conversationId)?.messageQueue?.remove(messageId)?.let(::cleanupQueuedAttachments)
+        val session = sessionManager.get(conversationId) ?: return
+        synchronized(session) {
+            if (session.messageQueue.state.value.sendingMessageId == messageId) return
+            session.messageQueue.remove(messageId)?.let(::cleanupQueuedAttachments)
+        }
         dispatchNextQueuedMessage(conversationId)
+    }
+
+    fun sendQueuedMessageNow(conversationId: Uuid, messageId: Uuid) {
+        val session = sessionManager.get(conversationId) ?: return
+        synchronized(session) {
+            val queued = session.messageQueue.state.value.messages.find { it.id == messageId } ?: return
+            session.startImmediateMessage(
+                messageId = messageId,
+                createJob = { block ->
+                    launchGenerationJob(conversationId, keepAliveInBackground = queued.answer, block = block)
+                },
+                send = { processQueuedMessage(session, it, immediate = true) },
+            )
+        }
     }
 
     fun beginEditQueuedMessage(conversationId: Uuid, messageId: Uuid): QueuedMessage? =
@@ -459,46 +478,7 @@ class ChatService(
             conversationId = conversationId,
             keepAliveInBackground = queued.answer,
         ) {
-            try {
-                ensureInitialized(session)
-                finishInterruptedPendingTools(session)
-
-                val assistant = settingsStore.awaitLoaded().getStoredAssistantOf(session.state.value)
-                val processedContent = queued.parts.replaceUserRegexes(assistant)
-
-                // 添加消息到列表
-                val previousIds = session.state.value.currentMessages.mapTo(HashSet()) { it.id }
-                session.update {
-                    it.copy(
-                        messageNodes = it.messageNodes + UIMessage(
-                            role = MessageRole.USER,
-                            parts = processedContent,
-                        ).toMessageNode(),
-                    )
-                }
-                session.flush()
-                session.submittingMessage = null
-
-                // 开始补全
-                val result = if (queued.answer) runTurn(session) else null
-
-                queued.reply?.completeWith(runCatching {
-                    check(result != TurnResult.Failed) { context.getString(R.string.chat_page_voice_generation_failed) }
-                    check((result as? TurnResult.Finished)?.reason !is AgentFinishReason.AwaitingApproval) {
-                        context.getString(R.string.chat_page_voice_tool_approval)
-                    }
-                    session.state.value.currentMessages
-                        .filter { it.id !in previousIds && it.role == MessageRole.ASSISTANT }
-                        .joinToString("\n") { it.toText() }
-                })
-                // Voice owns playback, including when its observer has already left the page.
-                // The ordinary autoplay collector must not read a late voice reply again.
-                if (queued.reply == null) _generationDoneFlow.emit(conversationId)
-            } catch (e: Exception) {
-                queued.reply?.completeExceptionally(e)
-                e.printStackTrace()
-                reportFailure(session, e, R.string.error_title_send_message)
-            }
+            processQueuedMessage(session, queued)
         }
         job.invokeOnCompletion { cause ->
             if (cause != null) queued.reply?.completeExceptionally(cause)
@@ -508,6 +488,64 @@ class ChatService(
         }
         session.setJob(job)
         return job
+    }
+
+    private suspend fun processQueuedMessage(
+        session: ConversationSession,
+        queued: QueuedMessage,
+        immediate: Boolean = false,
+    ) {
+        val conversationId = session.id
+        session.replyMessageId.value = null
+        try {
+            ensureInitialized(session)
+            if (immediate) {
+                session.tryUpdate { it.cancelToolsForImmediateMessage() }
+                session.flush()
+            } else {
+                finishInterruptedPendingTools(session)
+            }
+
+            val assistant = settingsStore.awaitLoaded().getStoredAssistantOf(session.state.value)
+            val processedContent = queued.parts.replaceUserRegexes(assistant)
+
+            // 添加消息到列表
+            val previousIds = session.state.value.currentMessages.mapTo(HashSet()) { it.id }
+            session.update {
+                it.copy(
+                    messageNodes = it.messageNodes + UIMessage(
+                        role = MessageRole.USER,
+                        parts = processedContent,
+                    ).toMessageNode(),
+                )
+            }
+            session.flush()
+            session.submittingMessage = null
+
+            // 开始补全
+            val result = if (queued.answer) runTurn(session) else null
+
+            queued.reply?.completeWith(runCatching {
+                check(result != TurnResult.Failed) { context.getString(R.string.chat_page_voice_generation_failed) }
+                check((result as? TurnResult.Finished)?.reason !is AgentFinishReason.AwaitingApproval) {
+                    context.getString(R.string.chat_page_voice_tool_approval)
+                }
+                session.state.value.currentMessages
+                    .filter { it.id !in previousIds && it.role == MessageRole.ASSISTANT }
+                    .joinToString("\n") { it.toText() }
+            })
+            // Voice owns playback, including when its observer has already left the page.
+            // The ordinary autoplay collector must not read a late voice reply again.
+            if (queued.reply == null) _generationDoneFlow.emit(conversationId)
+        } catch (e: Exception) {
+            queued.reply?.completeExceptionally(e)
+            e.printStackTrace()
+            reportFailure(session, e, R.string.error_title_send_message)
+        } finally {
+            synchronized(session) {
+                if (session.submittingMessage?.id == queued.id) session.submittingMessage = null
+            }
+        }
     }
 
     // 发送、重新生成和审批失败时报告错误并暂停队列，排队的消息等用户处理完再继续

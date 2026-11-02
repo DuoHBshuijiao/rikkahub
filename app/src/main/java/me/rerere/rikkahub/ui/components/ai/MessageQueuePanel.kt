@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -10,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,6 +44,7 @@ internal fun MessageQueuePanel(
     onBeginEdit: (Uuid) -> QueuedMessage?,
     onFinishEdit: (Uuid, List<UIMessagePart>?) -> Unit,
     onResume: () -> Unit,
+    onSendNow: (Uuid) -> Unit,
 ) {
     var editing by remember { mutableStateOf<QueuedMessage?>(null) }
     if (state.messages.isNotEmpty()) {
@@ -74,9 +77,9 @@ internal fun MessageQueuePanel(
                     itemsIndexed(
                         state.messages,
                         key = { _, message -> message.id }) { index, message ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             val attachmentLabels = listOf(
                                 stringResource(R.string.chat_page_queue_image),
@@ -95,19 +98,32 @@ internal fun MessageQueuePanel(
                                         else -> ""
                                     }
                                 },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.fillMaxWidth(),
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            TextButton(
-                                enabled = !message.isEditing,
-                                onClick = { editing = onBeginEdit(message.id) },
-                            ) { Text(if (message.isEditing) stringResource(R.string.chat_page_queue_editing) else stringResource(R.string.edit)) }
-                            TextButton(
-                                enabled = !message.isEditing,
-                                onClick = { onRemove(message.id) },
-                            ) { Text(stringResource(R.string.chat_page_queue_remove)) }
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                FilledTonalButton(
+                                    enabled = !message.isEditing && state.sendingMessageId == null,
+                                    onClick = { onSendNow(message.id) },
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag("chat_queue_send_now_${message.id}"),
+                                ) { Text(if (state.sendingMessageId == message.id) "正在发送…" else "直接发送") }
+                                TextButton(
+                                    enabled = !message.isEditing && state.sendingMessageId != message.id,
+                                    onClick = { editing = onBeginEdit(message.id) },
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag("chat_queue_edit_${message.id}"),
+                                ) { Text(if (message.isEditing) stringResource(R.string.chat_page_queue_editing) else stringResource(R.string.edit)) }
+                                TextButton(
+                                    enabled = !message.isEditing && state.sendingMessageId != message.id,
+                                    onClick = { onRemove(message.id) },
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                ) { Text(stringResource(R.string.chat_page_queue_remove)) }
+                            }
                         }
                     }
                 }

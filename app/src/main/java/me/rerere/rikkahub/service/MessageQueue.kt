@@ -21,6 +21,7 @@ data class QueuedMessage(
 data class MessageQueueState(
     val messages: List<QueuedMessage> = emptyList(),
     val paused: Boolean = false,
+    val sendingMessageId: Uuid? = null,
 )
 
 internal fun unreferencedQueuedAttachmentUrls(
@@ -59,23 +60,57 @@ class MessageQueue {
     @Synchronized
     fun takeNext(): QueuedMessage? {
         val current = state.value
-        if (current.paused) return null
+        if (current.paused || current.sendingMessageId != null) return null
         val next = current.messages.firstOrNull()?.takeUnless { it.isEditing } ?: return null
         mutableState.value = current.copy(messages = current.messages.drop(1))
         return next
+    }
+
+    /** Keep the item and its attachments in the queue while the previous generation stops. */
+    @Synchronized
+    internal fun reserveImmediate(id: Uuid): QueuedMessage? {
+        val current = state.value
+        if (current.sendingMessageId != null) return null
+        val message = current.messages.find { it.id == id && !it.isEditing } ?: return null
+        mutableState.value = current.copy(sendingMessageId = id)
+        return message
+    }
+
+    @Synchronized
+    internal fun takeImmediate(id: Uuid): QueuedMessage? {
+        val current = state.value
+        if (current.sendingMessageId != id) return null
+        val message = current.messages.find { it.id == id } ?: return null
+        mutableState.value = current.copy(
+            messages = current.messages.filterNot { it.id == id },
+            sendingMessageId = null,
+            paused = false,
+        )
+        return message
+    }
+
+    @Synchronized
+    internal fun releaseImmediate(id: Uuid) {
+        if (state.value.sendingMessageId == id) {
+            mutableState.value = state.value.copy(sendingMessageId = null)
+        }
     }
 
     @Synchronized
     fun remove(id: Uuid): QueuedMessage? {
         val removed = state.value.messages.find { it.id == id } ?: return null
         mutableState.value =
-            state.value.copy(messages = state.value.messages.filterNot { it.id == id })
+            state.value.copy(
+                messages = state.value.messages.filterNot { it.id == id },
+                sendingMessageId = state.value.sendingMessageId.takeUnless { it == id },
+            )
         removed.reply?.complete(null)
         return removed
     }
 
     @Synchronized
     fun beginEdit(id: Uuid): QueuedMessage? {
+        if (state.value.sendingMessageId == id) return null
         val message = state.value.messages.find { it.id == id && !it.isEditing } ?: return null
         mutableState.value = state.value.copy(
             messages = state.value.messages.map { if (it.id == id) it.copy(isEditing = true) else it },
@@ -85,14 +120,19 @@ class MessageQueue {
 
     @Synchronized
     fun finishEdit(id: Uuid, parts: List<UIMessagePart>? = null): QueuedMessage? {
+        if (state.value.sendingMessageId == id) return null
         if (parts != null && parts.isEmptyInputMessage()) return null
         val previous = state.value.messages.find { it.id == id } ?: return null
         mutableState.value = state.value.copy(
             messages = state.value.messages.map {
-                if (it.id == id) it.copy(
-                    parts = parts?.toList() ?: it.parts,
-                    isEditing = false
-                ) else it
+                if (it.id == id) {
+                    it.copy(
+                        parts = parts?.toList() ?: it.parts,
+                        isEditing = false
+                    )
+                } else {
+                    it
+                }
             },
         )
         // 取消编辑只释放占位，不能清理原附件。

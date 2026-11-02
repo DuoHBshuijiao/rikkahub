@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -62,6 +63,7 @@ private data class CardGroupItem(
     val colors: ListItemColors?,
     // 不为空时是表单项，标题行下方接这块内容
     val formContent: (@Composable ColumnScope.() -> Unit)? = null,
+    val contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
 )
 
 @DslMarker
@@ -83,6 +85,7 @@ interface CardGroupScope {
     // 表单项：标题行下方带一块自定义内容（输入框、滑块等），不传标题时整项都是自定义内容
     fun formItem(
         modifier: Modifier = Modifier,
+        contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         headlineContent: (@Composable () -> Unit)? = null,
         supportingContent: (@Composable () -> Unit)? = null,
         leadingContent: (@Composable () -> Unit)? = null,
@@ -120,6 +123,7 @@ private class CardGroupScopeImpl : CardGroupScope {
 
     override fun formItem(
         modifier: Modifier,
+        contentPadding: PaddingValues,
         headlineContent: (@Composable () -> Unit)?,
         supportingContent: (@Composable () -> Unit)?,
         leadingContent: (@Composable () -> Unit)?,
@@ -137,6 +141,7 @@ private class CardGroupScopeImpl : CardGroupScope {
                 trailingContent = trailingContent,
                 colors = null,
                 formContent = content,
+                contentPadding = contentPadding,
             )
         )
     }
@@ -237,7 +242,7 @@ private fun CardGroupFormItem(
         color = CustomColors.listItemColors.containerColor,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(item.contentPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (item.headlineContent != null || item.leadingContent != null || item.trailingContent != null) {

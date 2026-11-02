@@ -5,7 +5,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -287,6 +289,38 @@ class ConversationSession(
     }
 
     fun getJob(): Job? = _generationJob.value
+
+    /** [createJob] must return a lazy job, just like ordinary generation jobs. */
+    @Synchronized
+    internal fun startImmediateMessage(
+        messageId: Uuid,
+        createJob: (suspend () -> Unit) -> Job,
+        send: suspend (QueuedMessage) -> Unit,
+    ): Job? {
+        messageQueue.reserveImmediate(messageId) ?: return null
+        val previousJobs = activeJobs.toList()
+        val job = createJob {
+            try {
+                previousJobs.forEach { it.join() }
+                currentCoroutineContext().ensureActive()
+                val next = synchronized(this) {
+                    messageQueue.takeImmediate(messageId)?.also { submittingMessage = it }
+                }
+                if (next != null) send(next)
+            } finally {
+                // Stopping the handover must also wait for every predecessor's final save.
+                withContext(NonCancellable) {
+                    previousJobs.forEach { it.cancel() }
+                    previousJobs.forEach { it.join() }
+                }
+            }
+        }
+        job.invokeOnCompletion { messageQueue.releaseImmediate(messageId) }
+        // Register the successor before cancelling predecessors, so their completion cannot dispatch the queue.
+        setJob(job, cancelPrevious = false)
+        previousJobs.asReversed().forEach { it.cancel() }
+        return job
+    }
 
     @Synchronized
     fun cancelJobs(): List<Job> = activeJobs.toList().also { jobs ->

@@ -213,6 +213,7 @@ interface ChainOfThoughtScope {
         onClick: (() -> Unit)? = null,
         collapsedAdaptiveWidth: Boolean = false,
         contentVisible: Boolean = expanded,
+        indentContent: Boolean = true,
         content: (@Composable () -> Unit)? = null,
     )
 }
@@ -241,6 +242,7 @@ private class ChainOfThoughtScopeImpl(
             expanded = expanded,
             onExpandedChange = { expanded = it },
             contentVisible = expanded,
+            indentContent = true,
             content = content,
         )
     }
@@ -255,6 +257,7 @@ private class ChainOfThoughtScopeImpl(
         onClick: (() -> Unit)?,
         collapsedAdaptiveWidth: Boolean,
         contentVisible: Boolean,
+        indentContent: Boolean,
         content: @Composable (() -> Unit)?
     ) {
         ChainOfThoughtStepContent(
@@ -266,6 +269,7 @@ private class ChainOfThoughtScopeImpl(
             expanded = expanded,
             onExpandedChange = onExpandedChange,
             contentVisible = contentVisible,
+            indentContent = indentContent,
             content = content,
         )
     }
@@ -280,6 +284,7 @@ private class ChainOfThoughtScopeImpl(
         expanded: Boolean,
         onExpandedChange: (Boolean) -> Unit,
         contentVisible: Boolean,
+        indentContent: Boolean,
         content: @Composable (() -> Unit)?
     ) {
         val hasContent = content != null
@@ -418,7 +423,7 @@ private class ChainOfThoughtScopeImpl(
                             }
                         )
                         .drawBehind {
-                            if (!isLast) {
+                            if (!isLast && indentContent) {
                                 val x = 12.dp.toPx()
                                 drawLine(
                                     color = lineColor,
@@ -428,7 +433,7 @@ private class ChainOfThoughtScopeImpl(
                                 )
                             }
                         }
-                        .padding(start = 32.dp, top = 4.dp, bottom = 8.dp)
+                        .padding(start = if (indentContent) 32.dp else 0.dp, top = 4.dp, bottom = 8.dp)
                 ) {
                     content()
                 }

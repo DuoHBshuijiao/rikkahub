@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.components.message
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -76,6 +77,7 @@ internal fun ChainOfThoughtScope.AskUserToolStep(
     ControlledChainOfThoughtStep(
         expanded = expanded,
         onExpandedChange = { expanded = it },
+        indentContent = false,
         icon = {
             if (preparing) DotLoading(size = 10.dp) else Icon(
                 HugeIcons.BubbleChatQuestion, contentDescription = null, modifier = Modifier.size(16.dp)
@@ -194,7 +196,7 @@ private fun AskUserQuestionEditor(
         )
         CardGroup {
             draft.options.forEach { option ->
-                formItem {
+                formItem(contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
                     key(option.id) {
                         AskUserOptionRow(
                             option = option,
