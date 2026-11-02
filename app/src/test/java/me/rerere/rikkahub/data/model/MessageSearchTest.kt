@@ -88,6 +88,46 @@ class MessageSearchTest {
     }
 
     @Test
+    fun `chinese phrases never fall back to individual characters or shorter terms`() {
+        val text = "老师傅的手工技艺\n\n老人在讲手艺\n\n手艺很老"
+        assertTrue(hits(text, "老手艺", fallback = listOf("老", "手", "艺", "手艺")).isEmpty())
+        val results = hits("老手艺\n\n老师傅的手工技艺\n\n老手艺", "老手艺", fallback = listOf("老", "手艺"))
+        assertEquals(2, results.size)
+        assertTrue(results.all { it.target.matchedText == "老手艺" })
+        assertEquals(1, hits("老师傅", "老").size)
+    }
+
+    @Test
+    fun `mixed chinese input and punctuation require the complete query`() {
+        assertTrue(hits("GPT模型", "GPT新模型", fallback = listOf("GPT", "模型")).isEmpty())
+        assertTrue(hits("老，手艺", "老手艺", fallback = listOf("老", "手艺")).isEmpty())
+        assertTrue(hits("老手艺", "老 手艺", fallback = listOf("老", "手艺")).isEmpty())
+    }
+
+    @Test
+    fun `pinyin search still locates the original chinese phrase`() {
+        val results = hits("老手艺传承\n\n学习老手艺", "laoshouyi", fallback = listOf("老手艺"))
+        assertEquals(2, results.size)
+        assertTrue(results.all { it.target.matchedText == "老手艺" })
+    }
+
+    @Test
+    fun `shared message ids in forked conversations and different nodes have distinct keys`() {
+        val message = message("老手艺\n\n老手艺")
+        val original = buildMessageSearchHits("original", "node", message, null, "老手艺")
+        val forked = buildMessageSearchHits("forked", "fork-node", message, null, "老手艺")
+        val otherNode = buildMessageSearchHits("original", "other-node", message, null, "老手艺")
+        val otherConversation = buildMessageSearchHits("other", "node", message, null, "老手艺")
+        val results = original + forked + otherNode + otherConversation
+        assertEquals(8, results.size)
+        assertEquals(results.size, results.map { it.key }.distinct().size)
+        assertEquals(
+            original.map { it.key },
+            buildMessageSearchHits("original", "node", message, null, "老手艺").map { it.key }
+        )
+    }
+
+    @Test
     fun `snippet boundaries preserve surrogate pairs and original brackets`() {
         val snippet = buildSearchSnippet("😀[关键词]😀", SearchTextRange(3, 6), contextCharacters = 2)
         assertEquals("😀[关键词]😀", snippet.text)

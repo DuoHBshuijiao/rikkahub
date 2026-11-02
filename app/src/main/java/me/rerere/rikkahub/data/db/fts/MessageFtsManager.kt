@@ -335,29 +335,20 @@ class MessageFtsManager(private val database: AppDatabase) {
 
 private val QUERY_RUN = Regex("[A-Za-z0-9]+|[^\\sA-Za-z0-9]+")
 
-// 中文片段各字之间最多允许夹几个额外的字（如标点、“的”），再大就容易把散落各处的字也算作命中
-private const val CJK_NEAR_SLACK = 2
-
 /**
  * 把搜索词拼成 FTS5 查询，各段之间用 AND 连接：
  * 英文和数字交给 [asciiQuery]（simple_query，支持拼音和前缀匹配）；
- * 索引按单字切分中文，所以中文等其他字符的连续片段拆成单字，用 NEAR 要求它们挨得足够近，
- * 效果接近按词匹配，又不需要 jieba 词典。
+ * 中文等其他字符的连续片段使用短语匹配，要求分词按原顺序连续出现。
+ * 展示结果时仍按完整输入校验，避免分词忽略标点后产生的部分匹配。
  * 没有可搜索的内容时返回 null。
  */
 internal fun buildFtsMatchQuery(keyword: String, asciiQuery: (String) -> String): String? {
     val terms = QUERY_RUN.findAll(keyword).mapNotNull { match ->
         val text = match.value
-        val term = if (text.first().isAsciiLetterOrDigit()) asciiQuery(text) else nearQuery(text)
+        val term = if (text.first().isAsciiLetterOrDigit()) asciiQuery(text) else "\"${text.replace("\"", "\"\"")}\""
         term.takeIf { it.isNotBlank() }
     }.toList()
     return terms.takeIf { it.isNotEmpty() }?.joinToString(" AND ")
-}
-
-private fun nearQuery(text: String): String {
-    val chars = text.codePoints().toArray().map { "\"${String(Character.toChars(it)).replace("\"", "\"\"")}\"" }
-    if (chars.size == 1) return chars.single()
-    return "NEAR(${chars.joinToString(" ")}, ${chars.size - 2 + CJK_NEAR_SLACK})"
 }
 
 private fun Char.isAsciiLetterOrDigit(): Boolean = this in 'a'..'z' || this in 'A'..'Z' || this in '0'..'9'

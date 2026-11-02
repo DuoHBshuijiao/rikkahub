@@ -410,7 +410,7 @@ class ConversationRepository(
                     )
                 )
             }
-        }
+        }.distinctBy { it.key }
     }
 
     fun conversationToConversationEntity(conversation: Conversation): ConversationEntity {

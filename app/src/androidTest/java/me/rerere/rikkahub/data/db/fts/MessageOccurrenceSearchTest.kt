@@ -6,11 +6,13 @@ import kotlinx.coroutines.runBlocking
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -30,6 +32,14 @@ class MessageOccurrenceSearchTest {
     private val nodeId = Uuid.random().toString()
     private lateinit var database: AppDatabase
     private lateinit var manager: MessageFtsManager
+
+    private fun repository() = ConversationRepository(
+        database.conversationDao(),
+        database.messageNodeDao(),
+        database.favoriteDao(),
+        database,
+        manager,
+    )
 
     @Before
     fun setUp() {
@@ -95,6 +105,45 @@ class MessageOccurrenceSearchTest {
         val messages = seed("第一版窗前明月", "第二版山中明月")
         val candidates = manager.searchCandidates("明月", MessageSearchSort.RELEVANCE, null)
         assertEquals(messages.map { it.id.toString() }.toSet(), candidates.map { it.result.messageId }.toSet())
+    }
+
+    @Test
+    fun chinesePhraseSearchRejectsPartialMatchesButKeepsPinyinSearch() = runBlocking {
+        val messages = seed("传承老手艺", "老人的手艺", "手艺很老", "老，手艺", "老师傅的手工技艺")
+        val candidates = manager.searchCandidates("老手艺", MessageSearchSort.RELEVANCE, null)
+        assertTrue(candidates.any { it.result.messageId == messages.first().id.toString() })
+        assertTrue(candidates.none { it.result.messageId == messages[1].id.toString() })
+        assertTrue(candidates.none { it.result.messageId == messages[2].id.toString() })
+        val repository = repository()
+        val exact = repository.searchMessageHits("老手艺", MessageSearchSort.RELEVANCE, null, Settings())
+        assertEquals(listOf(messages.first().id.toString()), exact.map { it.target.messageId })
+        assertEquals("老手艺", exact.single().target.matchedText)
+        val pinyin = repository.searchMessageHits("laoshouyi", MessageSearchSort.RELEVANCE, null, Settings())
+        assertTrue(pinyin.any { it.target.messageId == messages.first().id.toString() })
+    }
+
+    @Test
+    fun forkedMessageIdsAndDuplicateIndexRowsNeverProduceDuplicateResultKeys() = runBlocking {
+        val message = seed("老手艺\n\n老手艺").single()
+        val forkId = Uuid.random()
+        val forkNodeId = Uuid.random().toString()
+        seed("placeholder", conversationId = forkId, nodeId = forkNodeId)
+        database.messageNodeDao().insert(
+            MessageNodeEntity(forkNodeId, forkId.toString(), 0, JsonInstant.encodeToString(listOf(message)), 0)
+        )
+        manager.ensureIndex()
+        // A legacy duplicate index row must not duplicate an occurrence in the displayed results.
+        database.openHelper.writableDatabase.execSQL(
+            """
+            INSERT INTO message_fts(text, node_id, message_id, conversation_id)
+            SELECT text, node_id, message_id, conversation_id FROM message_fts WHERE conversation_id = ?
+            """.trimIndent(),
+            arrayOf(conversationId.toString()),
+        )
+        val results = repository().searchMessageHits("老手艺", MessageSearchSort.RELEVANCE, null, Settings())
+        assertEquals(4, results.size)
+        assertEquals(4, results.map { it.key }.distinct().size)
+        assertEquals(setOf(conversationId.toString(), forkId.toString()), results.map { it.conversationId }.toSet())
     }
 
     @Test

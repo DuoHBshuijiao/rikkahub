@@ -42,7 +42,9 @@ data class MessageSearchHit(
     val target: SearchJumpTarget,
     val snippet: SearchSnippet,
 ) {
-    val key: String get() = "${target.messageId}:${target.partIndex}:${target.segmentPath}:${target.start}:${target.end}"
+    // Forked conversations retain message IDs, so an occurrence is only unique within its node and conversation.
+    val key: String get() =
+        "$conversationId:${target.nodeId}:${target.messageId}:${target.partIndex}:${target.segmentPath}:${target.start}:${target.end}"
 }
 
 fun searchContentFingerprint(content: String): String = buildString(64) {
@@ -146,7 +148,15 @@ fun buildMessageSearchHits(
             }
         }
     }
-    return collect(listOf(query)).ifEmpty { collect(fallbackTerms.filter { it.isNotBlank() }.distinct()) }
+    val literalHits = collect(listOf(query))
+    // Only pinyin input may use the native matched text. Never turn a Chinese phrase into single-character hits.
+    val isPinyinQuery = query.any { it in 'a'..'z' || it in 'A'..'Z' } &&
+        query.all { it in 'a'..'z' || it in 'A'..'Z' || it.isWhitespace() || it == '\'' }
+    return if (literalHits.isEmpty() && isPinyinQuery) {
+        collect(fallbackTerms.filter { it.isNotBlank() }.distinct())
+    } else {
+        literalHits
+    }
 }
 
 private data class SearchablePart(
