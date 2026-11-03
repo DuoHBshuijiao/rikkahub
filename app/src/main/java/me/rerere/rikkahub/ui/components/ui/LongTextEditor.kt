@@ -19,7 +19,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -265,9 +269,9 @@ internal fun FullscreenTextEditor(
             editor.navigation = null
         }
         Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
-            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical)).imePadding()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+                    Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(start = 16.dp, end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -308,7 +312,7 @@ internal fun FullscreenTextEditor(
                     EditorTextField(
                         state = editor.text,
                         viewport = editor.fullscreen,
-                        modifier = Modifier.weight(1f).fillMaxHeight().focusRequester(editorFocus)
+                        modifier = Modifier.weight(1f).fillMaxHeight().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).focusRequester(editorFocus)
                             .testTag(testTag).then(
                                 if (receiveContentListener == null) {
                                     Modifier
@@ -509,7 +513,7 @@ private fun EditorScrollbar(viewport: EditorViewport) {
                 onDrawBehind {
                     if (scroll.maxValue > 0) {
                         val height = scrollbarThumbHeight(size.height, scroll.maxValue, minimumThumb)
-                        val x = (size.width - width) / 2
+                        val x = size.width - width
                         drawRoundRect(trackColor, Offset(x, 0f), Size(width, size.height), CornerRadius(width))
                         val y = (size.height - height) * scroll.value / scroll.maxValue
                         drawRoundRect(color, Offset(x, y), Size(width, height), CornerRadius(width))

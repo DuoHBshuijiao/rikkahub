@@ -29,7 +29,6 @@ import kotlinx.coroutines.withContext
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.Fullscreen
-import me.rerere.hugeicons.stroke.Search01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.ui.toast.ToastType
@@ -117,10 +116,7 @@ fun TextArea(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (enableFullscreen) {
-                        IconButton(onClick = { editor.open(search = true) }, enabled = enabled) {
-                            Icon(HugeIcons.Search01, "查找")
-                        }
-                        IconButton(onClick = { editor.open() }, enabled = enabled) {
+                        IconButton(onClick = { editor.open() }, enabled = enabled, modifier = Modifier.testTag("text-area-open-fullscreen")) {
                             Icon(HugeIcons.Fullscreen, stringResource(R.string.text_area_fullscreen_edit))
                         }
                     }

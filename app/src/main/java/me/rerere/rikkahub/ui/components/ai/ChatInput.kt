@@ -82,7 +82,6 @@ import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowUp02
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Fullscreen
-import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
@@ -147,6 +146,8 @@ fun ChatInput(
 
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val messageEditor = rememberLongTextEditorState(state.textContent, state.editSession)
+    var inputFocused by remember { mutableStateOf(false) }
 
     val themeShape = MaterialTheme.shapes.largeIncreased
     val containerShape = RoundedCornerShape(
@@ -272,6 +273,8 @@ fun ChatInput(
                         assistant = assistant,
                         completionProviders = completionProviders,
                         onSendMessage = { sendMessage() },
+                        editor = messageEditor,
+                        onFocusChange = { inputFocused = it },
                     )
 
                     Row(
@@ -306,6 +309,11 @@ fun ChatInput(
                             }
                         }
 
+                        if (inputFocused || state.isEditing() || messageEditor.isFullscreen) {
+                            IconButton(onClick = { messageEditor.open() }) {
+                                Icon(HugeIcons.Fullscreen, "全屏编辑")
+                            }
+                        }
                         ActionIconButton(
                             onClick = onMoreClick
                         ) {
@@ -441,6 +449,8 @@ private fun TextInputRow(
     assistant: Assistant,
     completionProviders: List<ChatCompletionProvider>,
     onSendMessage: () -> Unit,
+    editor: me.rerere.rikkahub.ui.components.ui.LongTextEditorState,
+    onFocusChange: (Boolean) -> Unit,
 ) {
     val settings = LocalSettings.current
     val filesManager: FilesManager = koinInject()
@@ -448,7 +458,6 @@ private fun TextInputRow(
         settings.getQuickMessagesOfAssistant(assistant)
     }
 
-    val editor = rememberLongTextEditorState(state.textContent, state.editSession)
     val reasoningEditor = state.editingReasoning?.let { rememberLongTextEditorState(it) }
 
     Column(
@@ -579,12 +588,6 @@ private fun TextInputRow(
             )
         }
 
-        if (isFocused || state.isEditing() || fullscreenOpen) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                IconButton(onClick = { editor.open(search = true) }) { Icon(HugeIcons.Search01, "查找") }
-                IconButton(onClick = { editor.open() }) { Icon(HugeIcons.Fullscreen, "全屏编辑") }
-            }
-        }
         if (fullscreenOpen) {
             EditorPlaceholder(editor.inline)
         } else {
@@ -597,6 +600,7 @@ private fun TextInputRow(
                     .contentReceiver(receiveContentListener)
                     .onFocusChanged {
                         isFocused = it.isFocused
+                        onFocusChange(it.isFocused)
                     },
                 placeholder = stringResource(R.string.chat_input_placeholder),
                 lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),

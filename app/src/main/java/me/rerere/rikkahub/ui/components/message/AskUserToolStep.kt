@@ -190,7 +190,7 @@ private fun AskUserQuestionEditor(
     Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
         Text(question.question, style = MaterialTheme.typography.titleSmallEmphasized)
         Text(
-            if (question.selection == QuestionSelection.SINGLE) "单选 · 点击选择，双击文字编辑" else "多选 · 点击选择，双击文字编辑",
+            if (question.selection == QuestionSelection.SINGLE) "单选 · 双击文字编辑" else "多选 · 双击文字编辑",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

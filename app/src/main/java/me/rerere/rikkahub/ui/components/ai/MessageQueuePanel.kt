@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -108,7 +107,7 @@ internal fun MessageQueuePanel(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
-                                FilledTonalButton(
+                                TextButton(
                                     enabled = !message.isEditing && state.sendingMessageId == null,
                                     onClick = { onSendNow(message.id) },
                                     modifier = Modifier.heightIn(min = 48.dp).testTag("chat_queue_send_now_${message.id}"),

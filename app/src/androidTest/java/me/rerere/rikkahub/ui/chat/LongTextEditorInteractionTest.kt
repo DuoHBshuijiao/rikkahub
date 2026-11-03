@@ -48,6 +48,8 @@ class LongTextEditorInteractionTest {
                 RikkahubTheme { TextArea(draft, label = "正文") }
             }
         }
+        compose.onNodeWithContentDescription("查找").assertDoesNotExist()
+        compose.onNodeWithTag("text-area-open-fullscreen").performClick()
         compose.onNodeWithContentDescription("查找").performClick()
         compose.onNodeWithTag("text-area-inline").assertDoesNotExist()
         compose.onNodeWithTag("editor-search-query").performTextReplacement("关键词")
@@ -77,6 +79,7 @@ class LongTextEditorInteractionTest {
                 RikkahubTheme { TextArea(draft, label = "提示词") }
             }
         }
+        compose.onNodeWithTag("text-area-open-fullscreen").performClick()
         compose.onNodeWithContentDescription("查找").performClick()
         compose.onNodeWithTag("editor-search-query").performTextReplacement("目标")
         awaitText("1 / 2")
@@ -102,6 +105,7 @@ class LongTextEditorInteractionTest {
             }
         }
         val selection = compose.runOnIdle { draft.selection }
+        compose.onNodeWithTag("text-area-open-fullscreen").performClick()
         compose.onNodeWithContentDescription("查找").performClick()
         compose.onNodeWithTag("editor-search-query").performTextReplacement("目标")
         awaitText("1 / 1")
