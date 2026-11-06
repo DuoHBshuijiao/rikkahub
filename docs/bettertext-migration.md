@@ -21,7 +21,7 @@ application search behavior remains here.
 * Code line offsets, search-driven unfolding, table cell paths, details expansion,
   workspace images, quotation highlighting, font settings and the LaTeX switch remain.
 * Markdown/JSON file serialization, the Web renderer, HTML preview and editable text
-  fields keep their existing implementations. Color swatches are not enabled.
+  fields keep their existing implementations. App Markdown renders color swatches with empty alternate text.
 
 ## Validation when builds and device checks are permitted
 
