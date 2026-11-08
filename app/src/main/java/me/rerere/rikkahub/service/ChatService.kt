@@ -601,6 +601,11 @@ class ChatService(
                     load = { loadConversation(conversationId) },
                     create = { throw NotFoundException("Conversation not found") },
                 )
+                // A deleted conversation can still have an initialized draft in memory.
+                if (!session.existsInDatabase) {
+                    session.inbox.takeNotices()
+                    return@launchGenerationJob
+                }
                 // 加载前不知道是否在等审批；审批后执行完工具，这一轮会自己取走通知
                 if (session.state.value.isAwaitingToolApproval) return@launchGenerationJob
                 val notices = session.inbox.takeNotices()
@@ -1375,7 +1380,7 @@ class ChatService(
         // The old runtime state must no longer count as a live reference when recycling starts.
         filesManager.deleteChatFiles(deletedFiles.toList())
         sessionManager.removeIfIdle(session)
-        // 后台命令随会话一起终止, 撤销删除也不会恢复; 终止要等宽限期, 不阻塞删除
+        // 终止后台命令可能要等宽限期，避免阻塞删除。
         appScope.launch { backgroundShellManager.killConversation(conversationId) }
     }
 

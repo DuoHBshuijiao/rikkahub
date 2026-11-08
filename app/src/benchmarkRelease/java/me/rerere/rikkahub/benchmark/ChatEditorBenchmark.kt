@@ -130,6 +130,7 @@ internal fun ChatEditorBenchmark(content: String, effect: String) {
                     state = listState,
                     loading = false,
                     previewMode = false,
+                    onPreviewModeChange = {},
                     selection = MessageSelection(),
                     onSelectionChange = {},
                     onSelectMessage = {},

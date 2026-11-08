@@ -106,6 +106,7 @@ class MessageSelectionInteractionTest {
                         state = rememberLazyListState(),
                         loading = false,
                         previewMode = true,
+                        onPreviewModeChange = {},
                         selection = selection,
                         onSelectionChange = { selection = it },
                         onSelectMessage = { selection = MessageSelection.begin(it) },
