@@ -14,7 +14,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.service.MessageQueueState
+import me.rerere.rikkahub.service.InboxState
 import me.rerere.rikkahub.service.QueuedMessage
 import me.rerere.rikkahub.ui.components.ai.MessageQueuePanel
 import me.rerere.rikkahub.ui.theme.ColorMode
@@ -36,7 +36,7 @@ class MessageQueueInteractionTest {
                 CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
                     Box(Modifier.width(240.dp)) {
                         MessageQueuePanel(
-                            state = MessageQueueState(messages = listOf(message)),
+                            state = InboxState(items = listOf(message)),
                             onRemove = {},
                             onBeginEdit = { null },
                             onFinishEdit = { _, _ -> },
@@ -59,7 +59,7 @@ class MessageQueueInteractionTest {
         compose.setContent {
             RikkahubTheme {
                 MessageQueuePanel(
-                    state = MessageQueueState(messages = listOf(editing, sending), sendingMessageId = sending.id),
+                    state = InboxState(items = listOf(editing, sending), sendingMessageId = sending.id),
                     onRemove = {},
                     onBeginEdit = { null },
                     onFinishEdit = { _, _ -> },

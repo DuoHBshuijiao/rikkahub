@@ -60,11 +60,11 @@ class ImmediateMessageTest {
                 afterPreviousGeneration(old) { error("An interrupted approval must not execute") }
             }
             session.setJob(approval, cancelPrevious = false)
-            session.messageQueue.enqueue(listOf(UIMessagePart.Text("earlier")))
-            session.messageQueue.enqueue(
+            session.inbox.enqueue(listOf(UIMessagePart.Text("earlier")))
+            session.inbox.enqueue(
                 listOf(UIMessagePart.Text("new prompt"), UIMessagePart.Image("file:///test.png"))
             )
-            val selected = session.messageQueue.state.value.messages.last()
+            val selected = session.inbox.state.value.messages.last()
             val sent = mutableListOf<QueuedMessage>()
 
             val immediate = session.startImmediateMessage(
@@ -86,8 +86,8 @@ class ImmediateMessageTest {
             assertTrue(sent.isEmpty())
             assertTrue(completions.isEmpty())
             assertSame(immediate, session.getJob())
-            assertEquals(2, session.messageQueue.state.value.messages.size)
-            assertNull(session.messageQueue.takeNext())
+            assertEquals(2, session.inbox.state.value.messages.size)
+            assertNull(session.inbox.takeNext())
             assertNull(session.startImmediateMessage(selected.id, { error("Duplicate job") }, {}))
 
             finalSave.complete(Unit)
@@ -95,8 +95,8 @@ class ImmediateMessageTest {
 
             assertEquals(listOf(selected), sent)
             assertEquals(listOf<Throwable?>(null), completions)
-            assertEquals(listOf(UIMessagePart.Text("earlier")), session.messageQueue.takeNext()!!.parts)
-            assertNull(session.messageQueue.state.value.sendingMessageId)
+            assertEquals(listOf(UIMessagePart.Text("earlier")), session.inbox.takeMessage()!!.parts)
+            assertNull(session.inbox.state.value.sendingMessageId)
         } finally {
             session.cleanup()
             scope.cancel()
@@ -118,8 +118,8 @@ class ImmediateMessageTest {
                 }
             }
             session.setJob(old)
-            session.messageQueue.enqueue(listOf(UIMessagePart.Text("keep me")))
-            val selected = session.messageQueue.state.value.messages.single()
+            session.inbox.enqueue(listOf(UIMessagePart.Text("keep me")))
+            val selected = session.inbox.state.value.messages.single()
             var sent = false
             val immediate = session.startImmediateMessage(
                 selected.id,
@@ -127,7 +127,7 @@ class ImmediateMessageTest {
                 send = { sent = true },
             )!!
 
-            session.messageQueue.pause()
+            session.inbox.pause()
             val stopped = session.cancelJobs()
             assertFalse(immediate.isCompleted)
             finalSave.complete(Unit)
@@ -136,9 +136,9 @@ class ImmediateMessageTest {
             assertFalse(sent)
             assertTrue(old.isCompleted)
             assertTrue(immediate.isCancelled)
-            assertEquals(listOf(selected), session.messageQueue.state.value.messages)
-            assertTrue(session.messageQueue.state.value.paused)
-            assertNull(session.messageQueue.state.value.sendingMessageId)
+            assertEquals(listOf(selected), session.inbox.state.value.messages)
+            assertTrue(session.inbox.state.value.paused)
+            assertNull(session.inbox.state.value.sendingMessageId)
         } finally {
             session.cleanup()
             scope.cancel()
@@ -159,20 +159,20 @@ class ImmediateMessageTest {
                     withContext(NonCancellable) { finalSave.await() }
                 }
             })
-            session.messageQueue.enqueue(listOf(UIMessagePart.Text("discard me")))
-            val selected = session.messageQueue.state.value.messages.single()
+            session.inbox.enqueue(listOf(UIMessagePart.Text("discard me")))
+            val selected = session.inbox.state.value.messages.single()
             var sent = false
             val immediate = session.startImmediateMessage(
                 selected.id,
                 createJob = { block -> scope.launch(start = CoroutineStart.LAZY) { block() } },
                 send = { sent = true },
             )!!
-            session.messageQueue.remove(selected.id)
+            session.inbox.remove(selected.id)
             finalSave.complete(Unit)
             immediate.join()
 
             assertFalse(sent)
-            assertTrue(session.messageQueue.state.value.messages.isEmpty())
+            assertTrue(session.inbox.state.value.messages.isEmpty())
             assertNull(session.submittingMessage)
         } finally {
             session.cleanup()
@@ -185,3 +185,5 @@ class ImmediateMessageTest {
         override suspend fun write(previous: Conversation?, current: Conversation) = Unit
     }
 }
+
+private fun ConversationInbox.takeMessage() = (takeNext() as? InboxTurn.Message)?.message

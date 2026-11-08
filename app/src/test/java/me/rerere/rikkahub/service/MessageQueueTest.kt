@@ -14,7 +14,7 @@ class MessageQueueTest {
 
     @Test
     fun `immediate send keeps attachments referenced until handover and preserves remaining order`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         val reply = CompletableDeferred<String?>()
         queue.enqueue(text("first"))
         val parts = text("priority") + UIMessagePart.Image("file:///priority.png")
@@ -36,14 +36,14 @@ class MessageQueueTest {
         assertFalse(dispatched.answer)
         assertTrue(dispatched.reply === reply)
         assertFalse(reply.isCompleted)
-        assertEquals(text("first"), queue.takeNext()!!.parts)
-        assertEquals(text("last"), queue.takeNext()!!.parts)
+        assertEquals(text("first"), queue.takeMessage()!!.parts)
+        assertEquals(text("last"), queue.takeMessage()!!.parts)
         assertNull(queue.takeImmediate(selected.id))
     }
 
     @Test
     fun `cancelling immediate handover leaves the paused queue and original position intact`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         queue.enqueue(text("first"))
         queue.enqueue(text("second"))
         val selected = queue.state.value.messages.last()
@@ -57,12 +57,12 @@ class MessageQueueTest {
         queue.reserveImmediate(selected.id)
         assertEquals(selected, queue.takeImmediate(selected.id))
         assertFalse(queue.state.value.paused)
-        assertEquals(text("first"), queue.takeNext()!!.parts)
+        assertEquals(text("first"), queue.takeMessage()!!.parts)
     }
 
     @Test
     fun `immediate send rejects editing and removed items`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         queue.enqueue(text("draft"))
         val id = queue.state.value.messages.single().id
         queue.beginEdit(id)
@@ -77,7 +77,7 @@ class MessageQueueTest {
 
     @Test
     fun `editing a voice message preserves its reply observer and queue position`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         val reply = CompletableDeferred<String?>()
         queue.enqueue(text("original"), reply = reply)
         queue.enqueue(text("later"))
@@ -89,12 +89,12 @@ class MessageQueueTest {
         assertEquals(text("edited"), dispatched.parts)
         assertTrue(dispatched.reply === reply)
         assertFalse(reply.isCompleted)
-        assertEquals(text("later"), queue.takeNext()!!.parts)
+        assertEquals(text("later"), queue.takeMessage()!!.parts)
     }
 
     @Test
     fun `pausing resolves voice observers but retains queued content for manual resume`() = runBlocking {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         val reply = CompletableDeferred<String?>()
         queue.enqueue(text("keep me"), reply = reply)
         queue.pause()
@@ -102,12 +102,12 @@ class MessageQueueTest {
         assertTrue(runCatching { reply.await() }.exceptionOrNull() is IllegalStateException)
         assertEquals(text("keep me"), queue.state.value.messages.single().parts)
         queue.resume()
-        assertEquals(text("keep me"), queue.takeNext()!!.parts)
+        assertEquals(text("keep me"), queue.takeMessage()!!.parts)
     }
 
     @Test
     fun `tool approval can release reply observers without removing or resuming messages`() = runBlocking {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         val reply = CompletableDeferred<String?>()
         queue.enqueue(text("pending"), reply = reply)
         queue.failReplyWaiters("approval required")
@@ -118,11 +118,11 @@ class MessageQueueTest {
 
     @Test
     fun `dispatches in submission order and preserves send without answer`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         queue.enqueue(text("first"))
         queue.enqueue(text("second"), answer = false)
 
-        assertEquals(text("first"), queue.takeNext()!!.parts)
+        assertEquals(text("first"), queue.takeMessage()!!.parts)
         val second = queue.takeNext()!!
         assertEquals(text("second"), second.parts)
         assertFalse(second.answer)
@@ -131,7 +131,7 @@ class MessageQueueTest {
 
     @Test
     fun `editing the head blocks later messages and keeps its position`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         queue.enqueue(text("first"))
         queue.enqueue(text("second"))
         val id = queue.state.value.messages.first().id
@@ -143,46 +143,46 @@ class MessageQueueTest {
         val first = queue.takeNext()!!
         assertEquals(id, first.id)
         assertEquals(text("edited"), first.parts)
-        assertEquals(text("second"), queue.takeNext()!!.parts)
+        assertEquals(text("second"), queue.takeMessage()!!.parts)
     }
 
     @Test
     fun `editing a later message does not block earlier messages`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         queue.enqueue(text("first"))
         queue.enqueue(text("second"))
         queue.beginEdit(queue.state.value.messages.last().id)
 
-        assertEquals(text("first"), queue.takeNext()!!.parts)
+        assertEquals(text("first"), queue.takeMessage()!!.parts)
         assertNull(queue.takeNext())
     }
 
     @Test
     fun `cancelling an edit restores the original input and attachments`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         val parts = text("question") + UIMessagePart.Image("file:///test.png")
         queue.enqueue(parts)
         val id = queue.state.value.messages.single().id
         queue.beginEdit(id)
         queue.finishEdit(id)
 
-        assertEquals(parts, queue.takeNext()!!.parts)
+        assertEquals(parts, queue.takeMessage()!!.parts)
     }
 
     @Test
     fun `removing a message skips it without changing following input`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         queue.enqueue(text("first"))
         queue.enqueue(text("second"))
         queue.remove(queue.state.value.messages.first().id)
 
-        assertEquals(text("second"), queue.takeNext()!!.parts)
+        assertEquals(text("second"), queue.takeMessage()!!.parts)
         assertNull(queue.takeNext())
     }
 
     @Test
     fun `new input and edits cannot silently resume a paused queue`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         queue.enqueue(text("first"))
         queue.pause()
         queue.enqueue(text("second"))
@@ -193,15 +193,15 @@ class MessageQueueTest {
         assertTrue(queue.state.value.paused)
         assertNull(queue.takeNext())
         queue.resume()
-        assertEquals(text("edited"), queue.takeNext()!!.parts)
-        assertEquals(text("second"), queue.takeNext()!!.parts)
+        assertEquals(text("edited"), queue.takeMessage()!!.parts)
+        assertEquals(text("second"), queue.takeMessage()!!.parts)
     }
 
     @Test
     fun `late edit cannot recreate a removed or dispatched message`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         queue.enqueue(text("first"))
-        val id = queue.takeNext()!!.id
+        val id = queue.takeMessage()!!.id
 
         assertNull(queue.beginEdit(id))
         queue.finishEdit(id, text("late"))
@@ -210,35 +210,37 @@ class MessageQueueTest {
 
     @Test
     fun `rejects empty input but accepts attachment only input`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         queue.enqueue(text("  "))
         queue.enqueue(emptyList())
         assertNull(queue.takeNext())
 
         val parts = listOf(UIMessagePart.Image("file:///test.png"))
         queue.enqueue(parts)
-        assertEquals(parts, queue.takeNext()!!.parts)
+        assertEquals(parts, queue.takeMessage()!!.parts)
     }
 
     @Test
     fun `submission snapshots caller owned list`() {
-        val queue = MessageQueue()
+        val queue = ConversationInbox()
         val parts = mutableListOf<UIMessagePart>(UIMessagePart.Text("original"))
         queue.enqueue(parts)
         parts.clear()
 
-        assertEquals(text("original"), queue.takeNext()!!.parts)
+        assertEquals(text("original"), queue.takeMessage()!!.parts)
     }
 
     @Test
     fun `queues are isolated per conversation`() {
-        val first = MessageQueue()
-        val second = MessageQueue()
+        val first = ConversationInbox()
+        val second = ConversationInbox()
         first.enqueue(text("first"))
         second.enqueue(text("second"))
         first.pause()
 
         assertNull(first.takeNext())
-        assertEquals(text("second"), second.takeNext()!!.parts)
+        assertEquals(text("second"), second.takeMessage()!!.parts)
     }
 }
+
+private fun ConversationInbox.takeMessage() = (takeNext() as? InboxTurn.Message)?.message

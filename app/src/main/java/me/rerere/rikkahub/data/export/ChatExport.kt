@@ -39,6 +39,7 @@ fun filterExportMessages(messages: List<UIMessage>, options: ExportOptions): Lis
 private fun filterExportParts(parts: List<UIMessagePart>, options: ExportOptions): List<UIMessagePart> =
     parts.mapNotNull { part ->
         when (part) {
+            is UIMessagePart.Notice -> null
             is UIMessagePart.Reasoning -> part.takeIf { options.includeReasoning }
             is UIMessagePart.ServerTool -> part.takeIf { options.includeToolCalls }
             is UIMessagePart.Tool -> if (options.includeToolCalls) {

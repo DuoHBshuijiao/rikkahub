@@ -73,7 +73,7 @@ class ConversationSession(
     var incarnation = 0
         private set
 
-    val messageQueue = MessageQueue()
+    val inbox = ConversationInbox()
 
     /**
      * 页面切换和 SSE 重连只加载一次。[load] 返回 null 表示数据库里没有这个会话，改用 [create] 新建。
@@ -251,9 +251,15 @@ class ConversationSession(
     private val activeJobs = mutableSetOf<Job>()
     val generationJob: StateFlow<Job?> = _generationJob.asStateFlow()
     val isGenerating: Boolean get() = _generationJob.value?.isActive == true
+
+    // 压缩中不自动开始新的一轮，否则摘要返回时发现正在生成，这次压缩就作废了
+    @Volatile
+    var isCompressing = false
+        internal set
+
     val isInUse: Boolean
         get() = refCount.get() > 0 || _generationJob.value != null ||
-            messageQueue.state.value.messages.isNotEmpty()
+            inbox.state.value.items.isNotEmpty()
 
     // 空闲检查任务
     private var idleCheckJob: Job? = null
@@ -297,14 +303,14 @@ class ConversationSession(
         createJob: (suspend () -> Unit) -> Job,
         send: suspend (QueuedMessage) -> Unit,
     ): Job? {
-        messageQueue.reserveImmediate(messageId) ?: return null
+        inbox.reserveImmediate(messageId) ?: return null
         val previousJobs = activeJobs.toList()
         val job = createJob {
             try {
                 previousJobs.forEach { it.join() }
                 currentCoroutineContext().ensureActive()
                 val next = synchronized(this) {
-                    messageQueue.takeImmediate(messageId)?.also { submittingMessage = it }
+                    inbox.takeImmediate(messageId)?.also { submittingMessage = it }
                 }
                 if (next != null) send(next)
             } finally {
@@ -315,7 +321,7 @@ class ConversationSession(
                 }
             }
         }
-        job.invokeOnCompletion { messageQueue.releaseImmediate(messageId) }
+        job.invokeOnCompletion { inbox.releaseImmediate(messageId) }
         // Register the successor before cancelling predecessors, so their completion cannot dispatch the queue.
         setJob(job, cancelPrevious = false)
         previousJobs.asReversed().forEach { it.cancel() }
