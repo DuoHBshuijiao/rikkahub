@@ -838,7 +838,7 @@ private fun TopBar(
                         enabled = hasMessages,
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_page_export_format)) },
+                        text = { Text(stringResource(R.string.common_export)) },
                         onClick = {
                             menuExpanded = false
                             onExport()
