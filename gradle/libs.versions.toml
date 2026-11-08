@@ -1,7 +1,7 @@
 [versions]
 agp = "9.4.0"
 camerax = "1.6.2"
-bettertext = "c32d039ec54e6e354fdaba985e7f92802abdf145"
+bettertext = "803cbe318dd2ad367324b289798497a2de489d88"
 kotlin = "2.4.21"
 coreKtx = "1.19.1"
 ink = "1.1.0-alpha10"

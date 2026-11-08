@@ -249,6 +249,20 @@ class MarkdownParserTest {
     }
 
     @Test
+    fun `single tilde at the beginning of a paragraph renders as strikethrough`() {
+        val strike = single<Paragraph>("~abc~").content.filterIsInstance<Styled>().single()
+        assertEquals(TextDecoration.LineThrough, strike.style.textDecoration)
+        assertEquals(listOf(Text("abc")), strike.children)
+    }
+
+    @Test
+    fun `inline math is parsed next to CJK text and punctuation`() {
+        for (source in listOf("(\$x\$)", "设\$x\$为", "：\$x\$")) {
+            assertEquals(listOf(Math("x")), single<Paragraph>(source).content.filterIsInstance<Math>())
+        }
+    }
+
+    @Test
     fun `math keeps less than signs`() {
         val cases = """\begin{cases}1/2, & 0<x<1\\ \infty, & 1\le x<2\end{cases}"""
         assertEquals(

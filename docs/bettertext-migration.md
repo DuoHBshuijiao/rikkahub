@@ -2,7 +2,7 @@
 
 The application uses the `codex/rikkahub-search` branch of
 [DuoHBshuijiao/bettertext](https://github.com/DuoHBshuijiao/bettertext/tree/codex/rikkahub-search),
-based on upstream v0.1.3 (`aafb4cf15dee030e516fa204398097a6916acc8f`).
+including upstream v0.1.5 (`46324cfb1da1bba043d5ba75ea09b2f1ada06f17`).
 The version catalog pins the BOM and all four modules to the same immutable commit.
 The fork retains the upstream licenses and exposes only general text/layout hooks;
 application search behavior remains here.
@@ -38,5 +38,3 @@ custom fonts, and PNG exports. Do not infer a performance gain from parser struc
 The generated baseline and startup profiles still include old renderer symbols.
 Recollect them after functional validation, alongside the existing baseline workflows;
 do not replace the independently developed long-text editor benchmark.
-
-This change does not bump application version 3.1.1 / 194.
