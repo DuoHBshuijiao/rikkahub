@@ -201,6 +201,21 @@ class ConversationInboxTest {
     }
 
     @Test
+    fun `a reserved immediate message prevents a notice from starting another turn`() {
+        val inbox = ConversationInbox()
+        inbox.enqueue(text("earlier"))
+        inbox.enqueue(text("send now"))
+        val selected = inbox.state.value.messages.last()
+        inbox.reserveImmediate(selected.id)
+        inbox.post("finished", notice("finished"))
+
+        assertNull(inbox.takeNext())
+        assertEquals(selected, inbox.takeImmediate(selected.id))
+        assertEquals(listOf(notice("finished")), inbox.takeNotices())
+        assertEquals(text("earlier"), (inbox.takeNext() as InboxTurn.Message).message.parts)
+    }
+
+    @Test
     fun `pausing holds back notice turns but a running turn can still take them`() {
         val inbox = ConversationInbox()
         inbox.post("a", notice("a"))
