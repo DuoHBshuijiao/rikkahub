@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.pages.chat
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +12,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -61,10 +64,9 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Cancel01
-import me.rerere.hugeicons.stroke.LeftToRightListBullet
 import me.rerere.hugeicons.stroke.Menu03
 import me.rerere.hugeicons.stroke.MessageAdd01
+import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -92,6 +94,7 @@ import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.navigateToChatPage
+import me.rerere.ui.components.RikkaConfirmDialog
 import me.rerere.ui.toast.ToastType
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
@@ -327,6 +330,7 @@ private fun ChatPageContent(
         mutableStateOf(MessageSelection())
     }
     var showSelectionExport by rememberSaveable(conversation.id) { mutableStateOf(false) }
+    var showDeleteConfirm by rememberSaveable(conversation.id) { mutableStateOf(false) }
     var returnIndex by rememberSaveable(conversation.id) { mutableStateOf(0) }
     var returnOffset by rememberSaveable(conversation.id) { mutableStateOf(0) }
     var returnNodeId by rememberSaveable(conversation.id) { mutableStateOf<String?>(null) }
@@ -402,13 +406,23 @@ private fun ChatPageContent(
                         conversation = conversation,
                         bigScreen = bigScreen,
                         drawerState = drawerState,
-                        previewMode = previewMode,
                         onNewChat = {
                             navigateToChatPage(navController)
                         },
-                        onClickMenu = {
-                            previewMode = !previewMode
+                        onShowOverview = { previewMode = !previewMode },
+                        onExport = {
+                            returnIndex = chatListState.firstVisibleItemIndex
+                            returnOffset = chatListState.firstVisibleItemScrollOffset
+                            returnNodeId = conversation.messageNodes.getOrNull(returnIndex)?.id?.toString()
+                            searchFocus.clearFocus()
+                            searchKeyboard?.hide()
+                            previewMode = false
+                            selection = MessageSelection(
+                                active = true,
+                                selectedIds = conversation.messageNodes.mapTo(mutableSetOf()) { it.id },
+                            )
                         },
+                        onDelete = { showDeleteConfirm = true },
                         onUpdateTitle = {
                             vm.updateTitle(it)
                         }
@@ -508,6 +522,11 @@ private fun ChatPageContent(
                 loading = loadingJob != null,
                 processingStatus = processingStatus,
                 previewMode = previewMode,
+                onPreviewModeChange = { open ->
+                    searchFocus.clearFocus()
+                    searchKeyboard?.hide()
+                    previewMode = open
+                },
                 selection = selection,
                 onSelectionChange = { selection = it },
                 onSelectMessage = { id ->
@@ -612,6 +631,23 @@ private fun ChatPageContent(
             conversation = conversation,
             selectedMessages = selection.selectedMessages(conversation.messageNodes),
         )
+
+        RikkaConfirmDialog(
+            show = showDeleteConfirm,
+            title = stringResource(R.string.confirm_delete),
+            confirmText = stringResource(R.string.delete),
+            dismissText = stringResource(R.string.cancel),
+            onConfirm = {
+                showDeleteConfirm = false
+                scope.launch {
+                    vm.deleteConversation(conversation).join()
+                    navigateToChatPage(navController)
+                }
+            },
+            onDismiss = { showDeleteConfirm = false },
+        ) {
+            Text(stringResource(R.string.chat_page_delete_conversation_confirm))
+        }
 
         if (showFilesSheet) {
             ChatFilesPickerSheet(
@@ -722,8 +758,9 @@ private fun TopBar(
     conversation: Conversation,
     drawerState: DrawerState,
     bigScreen: Boolean,
-    previewMode: Boolean,
-    onClickMenu: () -> Unit,
+    onShowOverview: () -> Unit,
+    onExport: () -> Unit,
+    onDelete: () -> Unit,
     onNewChat: () -> Unit,
     onUpdateTitle: (String) -> Unit
 ) {
@@ -785,12 +822,38 @@ private fun TopBar(
             }
         },
         actions = {
-            IconButton(
-                onClick = {
-                    onClickMenu()
+            var menuExpanded by remember { mutableStateOf(false) }
+            val hasMessages = conversation.messageNodes.isNotEmpty()
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(HugeIcons.MoreVertical, stringResource(R.string.more_options))
                 }
-            ) {
-                Icon(if (previewMode) HugeIcons.Cancel01 else HugeIcons.LeftToRightListBullet, "Chat Options")
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.chat_page_conversation_map)) },
+                        onClick = {
+                            menuExpanded = false
+                            onShowOverview()
+                        },
+                        enabled = hasMessages,
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.chat_page_export_format)) },
+                        onClick = {
+                            menuExpanded = false
+                            onExport()
+                        },
+                        enabled = hasMessages,
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.delete)) },
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        },
+                        enabled = hasMessages,
+                    )
+                }
             }
 
             IconButton(

@@ -26,6 +26,7 @@ data class ExportOptions(
 enum class ChatExportFormat(val extension: String, val mimeType: String) {
     MARKDOWN("md", "text/markdown"),
     JSON("json", "application/json"),
+    PNG("png", "image/png"),
 }
 
 fun filterExportMessages(messages: List<UIMessage>, options: ExportOptions): List<UIMessage> =

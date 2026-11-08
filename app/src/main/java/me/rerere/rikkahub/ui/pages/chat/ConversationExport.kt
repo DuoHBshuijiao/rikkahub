@@ -44,7 +44,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
 import androidx.compose.runtime.mutableStateListOf
 import androidx.navigation3.runtime.NavKey
 import me.rerere.rikkahub.ui.context.Navigator
@@ -53,13 +52,14 @@ import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.request.crossfade
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyUIMessage
-import me.rerere.common.android.appTempFolder
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.tools.MemoryToolNames
 import me.rerere.rikkahub.data.export.ExportOptions
@@ -80,28 +80,27 @@ import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.ui.toast.rememberToasterState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
-import me.rerere.rikkahub.utils.exportImage
 import me.rerere.rikkahub.utils.getActivity
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.ui.charts.ChartCard
 import me.rerere.ui.charts.ChartSpec
 import me.rerere.ui.components.BitmapComposer
-import java.io.FileOutputStream
+import java.io.File
 import java.time.LocalDateTime
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
 
-internal suspend fun exportChatImage(
+internal suspend fun writeChatImage(
     context: Context,
     scope: CoroutineScope,
     density: Density,
     conversation: Conversation,
     messages: List<UIMessage>,
     settings: Settings,
-    options: ExportOptions = ExportOptions()
+    options: ExportOptions,
+    file: File,
 ) {
-    val filename = "chat-export-${LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))}.png"
     val composer = BitmapComposer(scope)
     val activity = context.getActivity() ?: error("Failed to get activity")
 
@@ -121,29 +120,11 @@ internal suspend fun exportChatImage(
     )
 
     try {
-        val dir = context.appTempFolder
-        val file = dir.resolve(filename)
-        if (!file.exists()) {
-            file.createNewFile()
-        } else {
-            file.delete()
-            file.createNewFile()
+        withContext(Dispatchers.IO) {
+            file.outputStream().use { output ->
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) { "Failed to encode PNG" }
+            }
         }
-
-        FileOutputStream(file).use { fos ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 90, fos)
-        }
-
-        // Save to gallery
-        context.exportImage(activity, bitmap, filename)
-
-        // Share the file
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file
-        )
-        shareFile(context, uri, "image/png")
     } finally {
         bitmap.recycle()
     }
@@ -479,19 +460,5 @@ private fun ChainOfThoughtScope.ExportedToolStep(
         },
         contentVisible = false,
         content = null,
-    )
-}
-
-private fun shareFile(context: Context, uri: Uri, mimeType: String) {
-    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-        type = mimeType
-        putExtra(android.content.Intent.EXTRA_STREAM, uri)
-        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    context.startActivity(
-        android.content.Intent.createChooser(
-            intent,
-            context.getString(R.string.chat_page_export_share_via)
-        )
     )
 }

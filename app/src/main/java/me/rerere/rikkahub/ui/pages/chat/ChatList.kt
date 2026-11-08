@@ -1,15 +1,8 @@
 package me.rerere.rikkahub.ui.pages.chat
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -48,6 +41,7 @@ import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -58,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Size
@@ -74,6 +69,8 @@ import androidx.compose.ui.platform.LocalScrollCaptureInProgress
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceAtLeast
 import androidx.compose.ui.zIndex
@@ -127,6 +124,7 @@ fun ChatList(
     loading: Boolean,
     processingStatus: String? = null,
     previewMode: Boolean,
+    onPreviewModeChange: (Boolean) -> Unit,
     selection: MessageSelection,
     onSelectionChange: (MessageSelection) -> Unit,
     onSelectMessage: (Uuid) -> Unit,
@@ -158,15 +156,18 @@ fun ChatList(
     isEditingMessage: Boolean = false,
 ) {
     val previewListState = rememberLazyListState()
+    val previewProgress = rememberPreviewSwipeProgress(previewMode)
+    val showPreview by remember(previewProgress) { derivedStateOf { previewProgress.value > 0f } }
+    val showChat by remember(previewProgress) { derivedStateOf { previewProgress.value < 1f } }
     val searchAssistant = settings.getAssistantOf(conversation)
     val previewResults by produceState(
         initialValue = ConversationPreviewResults(),
         conversation.messageNodes,
         searchQuery,
         searchAssistant.regexes,
-        previewMode,
+        showPreview,
     ) {
-        if (!previewMode) return@produceState
+        if (!showPreview) return@produceState
         if (searchQuery.isBlank()) {
             value = ConversationPreviewResults(conversation.messageNodes.mapIndexed { index, node ->
                 ConversationPreviewItem(index, node.currentMessage)
@@ -190,74 +191,90 @@ fun ChatList(
             }
         }
     }
-    AnimatedContent(
-        targetState = if (selection.active) {
-            2
-        } else if (previewMode) {
-            1
-        } else {
-            0
-        },
-        label = "ChatListMode",
-        transitionSpec = {
-            (fadeIn() + scaleIn(initialScale = 0.8f) togetherWith fadeOut() + scaleOut(targetScale = 0.8f))
+    if (selection.active) {
+        MessageSelectionList(
+            conversation = conversation,
+            selection = selection,
+            onSelectionChange = onSelectionChange,
+            innerPadding = innerPadding,
+        )
+        return
+    }
+
+    val layoutDirection = LocalLayoutDirection.current
+    val direction = if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
+    val scope = rememberCoroutineScope()
+    val canEnterPreview by rememberUpdatedState(conversation.messageNodes.isNotEmpty() && !isEditingMessage)
+    val currentPreviewMode by rememberUpdatedState(previewMode)
+    val currentOnPreviewModeChange by rememberUpdatedState(onPreviewModeChange)
+    Box(
+        Modifier
+            .fillMaxSize()
+            .clipToBounds()
+            .previewSwipeGesture(
+                progress = previewProgress,
+                scope = scope,
+                layoutDirection = layoutDirection,
+                canEnterPreview = { canEnterPreview },
+                isPreviewMode = { currentPreviewMode },
+                onPreviewModeChange = { currentOnPreviewModeChange(it) },
+            ),
+    ) {
+        if (showChat) {
+            Box(Modifier.fillMaxSize().graphicsLayer {
+                translationX = -previewProgress.value * size.width * direction
+            }) {
+                ChatListNormal(
+                    searchTarget = searchTarget,
+                    onClearSearchTarget = onClearSearchTarget,
+                    onReturnToSearch = onReturnToSearch,
+                    onSearchError = onSearchError,
+                    innerPadding = innerPadding,
+                    conversation = conversation,
+                    state = state,
+                    loading = loading,
+                    processingStatus = processingStatus,
+                    settings = settings,
+                    hazeState = hazeState,
+                    errors = errors,
+                    onDismissError = onDismissError,
+                    onClearAllErrors = onClearAllErrors,
+                    onRegenerate = onRegenerate,
+                    onEdit = onEdit,
+                    onForkMessage = onForkMessage,
+                    onDelete = onDelete,
+                    onUpdateMessage = onUpdateMessage,
+                    onClickSuggestion = onClickSuggestion,
+                    onTranslate = onTranslate,
+                    onClearTranslation = onClearTranslation,
+                    onToolApproval = onToolApproval,
+                    onToolAnswer = onToolAnswer,
+                    onToggleFavorite = onToggleFavorite,
+                    onConversationSystemPromptChange = onConversationSystemPromptChange,
+                    onSelectMessage = onSelectMessage,
+                    autoScroll = !selection.active && !isEditingMessage,
+                    isEditingMessage = isEditingMessage,
+                )
+            }
         }
-    ) { target ->
-        if (target == 2) {
-            MessageSelectionList(
-                conversation = conversation,
-                selection = selection,
-                onSelectionChange = onSelectionChange,
-                innerPadding = innerPadding,
-            )
-        } else if (target == 1) {
-            ChatListPreview(
-                searchQuery = searchQuery,
-                onSearchQueryChange = onSearchQueryChange,
-                results = previewResults,
-                state = previewListState,
-                onJumpToSearchHit = onJumpToSearchHit,
-                innerPadding = innerPadding,
-                conversation = conversation,
-                settings = settings,
-                hazeState = hazeState,
-                onJumpToMessage = onJumpToMessage,
-                animatedVisibilityScope = this@AnimatedContent,
-                onSelectMessage = onSelectMessage,
-            )
-        } else {
-            ChatListNormal(
-                searchTarget = searchTarget,
-                onClearSearchTarget = onClearSearchTarget,
-                onReturnToSearch = onReturnToSearch,
-                onSearchError = onSearchError,
-                innerPadding = innerPadding,
-                conversation = conversation,
-                state = state,
-                loading = loading,
-                processingStatus = processingStatus,
-                settings = settings,
-                hazeState = hazeState,
-                errors = errors,
-                onDismissError = onDismissError,
-                onClearAllErrors = onClearAllErrors,
-                onRegenerate = onRegenerate,
-                onEdit = onEdit,
-                onForkMessage = onForkMessage,
-                onDelete = onDelete,
-                onUpdateMessage = onUpdateMessage,
-                onClickSuggestion = onClickSuggestion,
-                onTranslate = onTranslate,
-                onClearTranslation = onClearTranslation,
-                animatedVisibilityScope = this@AnimatedContent,
-                onToolApproval = onToolApproval,
-                onToolAnswer = onToolAnswer,
-                onToggleFavorite = onToggleFavorite,
-                onConversationSystemPromptChange = onConversationSystemPromptChange,
-                onSelectMessage = onSelectMessage,
-                autoScroll = !selection.active && !isEditingMessage,
-                isEditingMessage = isEditingMessage,
-            )
+        if (showPreview) {
+            Box(Modifier.fillMaxSize().graphicsLayer {
+                translationX = (1f - previewProgress.value) * size.width * direction
+            }) {
+                ChatListPreview(
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = onSearchQueryChange,
+                    results = previewResults,
+                    state = previewListState,
+                    onJumpToSearchHit = onJumpToSearchHit,
+                    innerPadding = innerPadding,
+                    conversation = conversation,
+                    settings = settings,
+                    hazeState = hazeState,
+                    onJumpToMessage = onJumpToMessage,
+                    onSelectMessage = onSelectMessage,
+                )
+            }
         }
     }
 }
@@ -305,7 +322,6 @@ private fun ChatListNormal(
     onClickSuggestion: (String) -> Unit,
     onTranslate: ((UIMessage, java.util.Locale) -> Unit)?,
     onClearTranslation: (UIMessage) -> Unit,
-    animatedVisibilityScope: AnimatedVisibilityScope,
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
@@ -593,7 +609,6 @@ private fun ChatListPreview(
     conversation: Conversation,
     settings: Settings,
     hazeState: HazeState,
-    animatedVisibilityScope: AnimatedVisibilityScope,
     onJumpToMessage: (Int) -> Unit
 ) {
     Column(

@@ -117,6 +117,8 @@ fun ChatExportSheet(
     }
     val markdownSave = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown"), ::saveResult)
     val jsonSave = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json"), ::saveResult)
+    val pngSave = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png"), ::saveResult)
+    val formats = if (allowImageExport) ChatExportFormat.entries else ChatExportFormat.entries.filterNot { it == ChatExportFormat.PNG }
 
     fun export(save: Boolean) {
         if (preparing || pendingFile != null) return
@@ -124,31 +126,40 @@ fun ChatExportSheet(
         scope.launch {
             exportError = null
             try {
+                val chosenFormat = format
                 val file = withContext(Dispatchers.IO) {
                     require(filtered.isNotEmpty()) { "筛选后没有可导出的消息" }
-                    val text = when (format) {
-                        ChatExportFormat.MARKDOWN -> exportChatMarkdown(snapshot.title, messages, options) { image ->
-                            image.encodeBase64().getOrThrow().base64
-                        }
-                        ChatExportFormat.JSON -> JsonInstantPretty.encodeToString(
-                            JsonElement.serializer(),
-                            factory.buildExportRequestBody(settings, snapshot, messages, options),
-                        )
-                    }
                     val directory = context.appTempFolder.resolve("chat-exports/${Uuid.random()}")
                     check(directory.mkdirs()) { "无法创建导出目录" }
-                    directory.resolve(chatExportFileName(snapshot.title, format)).also { it.writeText(text, Charsets.UTF_8) }
+                    directory.resolve(chatExportFileName(snapshot.title, chosenFormat))
+                }
+                when (chosenFormat) {
+                    ChatExportFormat.PNG -> writeChatImage(context, scope, density, snapshot, filtered, settings, options, file)
+                    ChatExportFormat.MARKDOWN, ChatExportFormat.JSON -> withContext(Dispatchers.IO) {
+                        val text = if (chosenFormat == ChatExportFormat.MARKDOWN) {
+                            exportChatMarkdown(snapshot.title, messages, options) { image ->
+                                image.encodeBase64().getOrThrow().base64
+                            }
+                        } else {
+                            JsonInstantPretty.encodeToString(
+                                JsonElement.serializer(),
+                                factory.buildExportRequestBody(settings, snapshot, messages, options),
+                            )
+                        }
+                        file.writeText(text, Charsets.UTF_8)
+                    }
                 }
                 if (save) {
                     pendingFile = file.absolutePath
-                    when (format) {
+                    when (chosenFormat) {
                         ChatExportFormat.MARKDOWN -> markdownSave.launch(file.name)
                         ChatExportFormat.JSON -> jsonSave.launch(file.name)
+                        ChatExportFormat.PNG -> pngSave.launch(file.name)
                     }
                 } else {
                     val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                     val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = format.mimeType
+                        type = chosenFormat.mimeType
                         putExtra(Intent.EXTRA_STREAM, uri)
                         clipData = ClipData.newRawUri(file.name, uri)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -185,14 +196,20 @@ fun ChatExportSheet(
                     headlineContent = { Text("文件格式") },
                 ) {
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        ChatExportFormat.entries.forEachIndexed { index, value ->
+                        formats.forEachIndexed { index, value ->
                             SegmentedButton(
                                 selected = format == value,
                                 onClick = { format = value; exportError = null },
                                 enabled = !busy,
-                                shape = SegmentedButtonDefaults.itemShape(index, ChatExportFormat.entries.size),
+                                shape = SegmentedButtonDefaults.itemShape(index, formats.size),
                             ) {
-                                Text(if (value == ChatExportFormat.MARKDOWN) "Markdown" else "JSON")
+                                Text(
+                                    when (value) {
+                                        ChatExportFormat.MARKDOWN -> "Markdown"
+                                        ChatExportFormat.JSON -> "JSON"
+                                        ChatExportFormat.PNG -> "PNG"
+                                    },
+                                )
                             }
                         }
                     }
@@ -203,6 +220,14 @@ fun ChatExportSheet(
                     headlineContent = { Text("包含思考内容") })
                 switchItem(checked = assistantOnly, onCheckedChange = { assistantOnly = it; exportError = null }, enabled = !busy,
                     headlineContent = { Text("仅助手消息") })
+                if (format == ChatExportFormat.PNG) {
+                    switchItem(
+                        checked = expandReasoning,
+                        onCheckedChange = { expandReasoning = it },
+                        enabled = !busy && includeReasoning,
+                        headlineContent = { Text("图片中展开思考") },
+                    )
+                }
             }
             Text(
                 if (format == ChatExportFormat.JSON) "按当前配置重建请求格式。思考内容遵循接口的发送规则，与历史实际请求可能不同。"
@@ -221,31 +246,7 @@ fun ChatExportSheet(
                     Text("保存文件")
                 }
             }
-            if (allowImageExport) {
-                CardGroup {
-                    switchItem(checked = expandReasoning, onCheckedChange = { expandReasoning = it }, enabled = !busy && includeReasoning,
-                        headlineContent = { Text("图片中展开思考") })
-                    item(
-                        headlineContent = { Text("导出图片") },
-                        onClick = if (busy || filtered.isEmpty()) null else ({
-                            scope.launch {
-                                preparing = true
-                                exportError = null
-                                try {
-                                    exportChatImage(context, scope, density, snapshot, filtered, settings, options)
-                                    onExportComplete()
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    exportError = "导出图片失败：${e.message}"
-                                } finally {
-                                    preparing = false
-                                }
-                            }
-                        }),
-                    )
-                }
-            }
+
         }
     }
 }

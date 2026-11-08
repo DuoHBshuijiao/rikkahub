@@ -42,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,6 +56,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Fullscreen
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.utils.toLocalString
 
@@ -102,8 +104,17 @@ fun MessageSelectionToolbar(
                 }
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { onChange(selection.copy(selectedIds = conversation.messageNodes.map { it.id }.toSet(), choosingRange = false, rangeStart = null)) }) { Text("全选") }
-                TextButton(onClick = { onChange(selection.copy(selectedIds = emptySet(), choosingRange = false, rangeStart = null)) }, enabled = selection.selectedIds.isNotEmpty()) { Text("清空") }
+                val allSelected = conversation.messageNodes.isNotEmpty() &&
+                    conversation.messageNodes.all { it.id in selection.selectedIds }
+                TextButton(
+                    enabled = conversation.messageNodes.isNotEmpty(),
+                    onClick = {
+                        val ids = if (allSelected) emptySet() else conversation.messageNodes.mapTo(mutableSetOf()) { it.id }
+                        onChange(selection.copy(selectedIds = ids, choosingRange = false, rangeStart = null))
+                    },
+                ) {
+                    Text(stringResource(if (allSelected) R.string.chat_page_deselect_all else R.string.chat_page_select_all))
+                }
                 TextButton(onClick = { onChange(selection.copy(choosingRange = true, rangeStart = null, onlySelected = false)) }) { Text("范围选择") }
                 Button(onClick = onExport, enabled = selection.selectedIds.isNotEmpty() && !selection.choosingRange) { Text("导出") }
             }
