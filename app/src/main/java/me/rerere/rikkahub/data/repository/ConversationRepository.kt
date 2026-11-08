@@ -332,11 +332,12 @@ class ConversationRepository(
         messageFtsManager.indexConversation(conversation)
     }
 
-    suspend fun updateConversation(conversation: Conversation) {
+    suspend fun updateConversation(conversation: Conversation, removedNodeIds: Collection<Uuid> = emptyList()) {
         database.withTransaction {
             conversationDAO.update(
                 conversationToConversationEntity(conversation)
             )
+            deleteNodeFavorites(conversation.id, removedNodeIds)
             // 删除旧的节点，插入新的节点
             messageNodeDAO.deleteByConversation(conversation.id.toString())
             saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
@@ -351,14 +352,25 @@ class ConversationRepository(
         } else {
             conversation
         }
+        val conversationId = conversation.id.toString()
         database.withTransaction {
+            // 收藏表和会话没有外键，要单独删
+            favoriteDAO.deleteNodeFavoritesOfConversation(conversationId)
             // message_node 会通过 CASCADE 自动删除
             conversationDAO.delete(
                 conversationToConversationEntity(conversation)
             )
         }
-        messageFtsManager.deleteConversation(conversation.id.toString())
+        messageFtsManager.deleteConversation(conversationId)
         return fullConversation.files
+    }
+
+    /** 在更新节点的同一个事务中删除收藏。 */
+    private suspend fun deleteNodeFavorites(conversationId: Uuid, nodeIds: Collection<Uuid>) {
+        nodeIds
+            .map { NodeFavoriteAdapter.buildRefKey(conversationId.toString(), it.toString()) }
+            .chunked(500)
+            .forEach { favoriteDAO.deleteByRefKeys(it) }
     }
 
     suspend fun searchMessages(
