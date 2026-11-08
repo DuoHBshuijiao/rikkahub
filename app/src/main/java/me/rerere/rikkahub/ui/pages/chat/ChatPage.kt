@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
@@ -35,6 +36,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +56,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.Job
@@ -81,6 +84,7 @@ import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.BackgroundTasksSheet
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.components.ai.ChatInput
+import me.rerere.rikkahub.ui.components.ai.ChatTopBarCapsule
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.SearchMode
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
@@ -382,6 +386,10 @@ private fun ChatPageContent(
         }.orEmpty()
     }
 
+    val listScrolledUnderTopBar by remember(chatListState) {
+        derivedStateOf { chatListState.canScrollBackward }
+    }
+
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
 
     Surface(
@@ -406,6 +414,8 @@ private fun ChatPageContent(
                         conversation = conversation,
                         bigScreen = bigScreen,
                         drawerState = drawerState,
+                        hazeState = hazeState,
+                        showCapsuleBackground = !previewMode && conversation.messageNodes.isNotEmpty() && listScrolledUnderTopBar,
                         onNewChat = {
                             navigateToChatPage(navController)
                         },
@@ -758,6 +768,8 @@ private fun TopBar(
     conversation: Conversation,
     drawerState: DrawerState,
     bigScreen: Boolean,
+    hazeState: HazeState,
+    showCapsuleBackground: Boolean,
     onShowOverview: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
@@ -774,12 +786,19 @@ private fun TopBar(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         navigationIcon = {
             if (!bigScreen) {
-                IconButton(
-                    onClick = {
-                        scope.launch { drawerState.open() }
-                    }
+                ChatTopBarCapsule(
+                    hazeState = hazeState,
+                    displaySetting = settings.displaySetting,
+                    showBackground = showCapsuleBackground,
+                    modifier = Modifier.padding(start = 8.dp, end = 4.dp),
                 ) {
-                    Icon(HugeIcons.Menu03, "Messages")
+                    IconButton(
+                        onClick = {
+                            scope.launch { drawerState.open() }
+                        }
+                    ) {
+                        Icon(HugeIcons.Menu03, "Messages")
+                    }
                 }
             }
         },
@@ -824,44 +843,51 @@ private fun TopBar(
         actions = {
             var menuExpanded by remember { mutableStateOf(false) }
             val hasMessages = conversation.messageNodes.isNotEmpty()
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(HugeIcons.MoreVertical, stringResource(R.string.more_options))
-                }
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_page_conversation_map)) },
-                        onClick = {
-                            menuExpanded = false
-                            onShowOverview()
-                        },
-                        enabled = hasMessages,
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.common_export)) },
-                        onClick = {
-                            menuExpanded = false
-                            onExport()
-                        },
-                        enabled = hasMessages,
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.delete)) },
-                        onClick = {
-                            menuExpanded = false
-                            onDelete()
-                        },
-                        enabled = hasMessages,
-                    )
-                }
-            }
-
-            IconButton(
-                onClick = {
-                    onNewChat()
-                }
+            ChatTopBarCapsule(
+                hazeState = hazeState,
+                displaySetting = settings.displaySetting,
+                showBackground = showCapsuleBackground,
+                modifier = Modifier.padding(start = 4.dp, end = 8.dp),
             ) {
-                Icon(HugeIcons.MessageAdd01, "New Message")
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(HugeIcons.MoreVertical, stringResource(R.string.more_options))
+                    }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.chat_page_conversation_map)) },
+                            onClick = {
+                                menuExpanded = false
+                                onShowOverview()
+                            },
+                            enabled = hasMessages,
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.common_export)) },
+                            onClick = {
+                                menuExpanded = false
+                                onExport()
+                            },
+                            enabled = hasMessages,
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.delete)) },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete()
+                            },
+                            enabled = hasMessages,
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = {
+                        onNewChat()
+                    }
+                ) {
+                    Icon(HugeIcons.MessageAdd01, "New Message")
+                }
             }
         },
     )
