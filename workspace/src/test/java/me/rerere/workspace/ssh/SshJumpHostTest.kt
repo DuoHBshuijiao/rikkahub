@@ -1,11 +1,14 @@
 package me.rerere.workspace.ssh
 
+import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.server.SshServer
 import org.apache.sshd.server.auth.password.PasswordAuthenticator
 import org.apache.sshd.server.command.CommandFactory
 import org.apache.sshd.server.forward.AcceptAllForwardingFilter
 import org.apache.sshd.server.forward.RejectAllForwardingFilter
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider
+import org.apache.sshd.server.shell.InvertedShellWrapper
+import org.apache.sshd.server.shell.ProcessShell
 import org.apache.sshd.server.shell.ProcessShellFactory
 import org.apache.sshd.sftp.server.SftpSubsystemFactory
 import org.junit.After
@@ -14,6 +17,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -33,6 +37,9 @@ class SshJumpHostTest {
     private lateinit var jump: SshServer
     private lateinit var target: SshServer
     private lateinit var remoteDir: File
+    private val windows = System.getProperty("os.name").orEmpty().startsWith("Windows")
+    private val gitBash = System.getenv("ProgramFiles")?.let { File(it, "Git/bin/bash.exe") }
+        ?.takeIf { it.isFile }
 
     @Before
     fun setUp() {
@@ -55,10 +62,15 @@ class SshJumpHostTest {
             keyPairProvider = SimpleGeneratorHostKeyProvider(File(tempFolder.root, "host_key_$name").toPath())
             passwordAuthenticator = PasswordAuthenticator { u, p, _ -> u == user && p == password }
             forwardingFilter = AcceptAllForwardingFilter.INSTANCE
+            fileSystemFactory = VirtualFileSystemFactory(remoteDir.toPath())
             subsystemFactories = listOf(SftpSubsystemFactory())
             commandFactory = CommandFactory { channel, command ->
-                ProcessShellFactory(command, "/usr/bin/env", "HOME=${home.path}", "/bin/sh", "-c", command)
-                    .createShell(channel)
+                if (windows && gitBash != null) {
+                    InvertedShellWrapper(ProcessShell(listOf(gitBash.absolutePath, "-c", command)))
+                } else {
+                    ProcessShellFactory(command, "/usr/bin/env", "HOME=${home.path}", "/bin/sh", "-c", command)
+                        .createShell(channel)
+                }
             }
             start()
         }
@@ -83,7 +95,7 @@ class SshJumpHostTest {
         username = USER,
         authType = SshAuthType.PASSWORD,
         password = PASSWORD,
-        remoteDir = remoteDir.path,
+        remoteDir = "/",
         hostKey = hostKey,
         jumpHost = jumpHost,
     )
@@ -122,6 +134,7 @@ class SshJumpHostTest {
 
     @Test
     fun commandsAndFilesGoThroughTheTunnel() {
+        assumeTrue("The Windows fixture needs Git Bash for POSIX commands", !windows || gitBash != null)
         val connection = SshConnection.open(trustedConfig())
         connection.use {
             val result = it.exec("printf hello", timeoutMillis = 10_000)
@@ -130,7 +143,7 @@ class SshJumpHostTest {
 
             // 大于隧道窗口的数据, 验证双向流控不会卡住
             val payload = ByteArray(4 * 1024 * 1024) { index -> (index % 251).toByte() }
-            it.sftp { sftp -> sftp.put(payload.inputStream(), "${remoteDir.path}/big.bin") }
+            it.sftp { sftp -> sftp.put(payload.inputStream(), "/big.bin") }
             assertTrue(payload.contentEquals(File(remoteDir, "big.bin").readBytes()))
             val counted = it.exec("wc -c", timeoutMillis = 30_000, stdin = payload)
             assertEquals(payload.size.toString(), counted.stdout.trim())
