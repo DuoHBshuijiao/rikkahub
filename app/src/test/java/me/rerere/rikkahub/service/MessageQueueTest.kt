@@ -85,7 +85,7 @@ class MessageQueueTest {
         queue.beginEdit(id)
         assertNull(queue.takeNext())
         queue.finishEdit(id, text("edited"))
-        val dispatched = queue.takeNext()!!
+        val dispatched = queue.takeMessage()!!
         assertEquals(text("edited"), dispatched.parts)
         assertTrue(dispatched.reply === reply)
         assertFalse(reply.isCompleted)
@@ -123,7 +123,7 @@ class MessageQueueTest {
         queue.enqueue(text("second"), answer = false)
 
         assertEquals(text("first"), queue.takeMessage()!!.parts)
-        val second = queue.takeNext()!!
+        val second = queue.takeMessage()!!
         assertEquals(text("second"), second.parts)
         assertFalse(second.answer)
         assertNull(queue.takeNext())
@@ -140,7 +140,7 @@ class MessageQueueTest {
         assertNull(queue.takeNext())
         queue.finishEdit(id, text("edited"))
 
-        val first = queue.takeNext()!!
+        val first = queue.takeMessage()!!
         assertEquals(id, first.id)
         assertEquals(text("edited"), first.parts)
         assertEquals(text("second"), queue.takeMessage()!!.parts)
