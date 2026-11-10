@@ -81,6 +81,7 @@ import me.rerere.rikkahub.data.model.SearchJumpTarget
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.BackgroundShellStatus
 import me.rerere.rikkahub.service.ChatError
+import me.rerere.rikkahub.service.SessionActivity
 import me.rerere.rikkahub.ui.components.ai.BackgroundTasksSheet
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.components.ai.ChatInput
@@ -328,6 +329,7 @@ private fun ChatPageContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
+    val sessionActivity by vm.sessionActivity.collectAsStateWithLifecycle()
 
     var previewMode by rememberSaveable(conversation.id) { mutableStateOf(false) }
     var selection by rememberSaveable(conversation.id, stateSaver = MessageSelection.StateSaver) {
@@ -530,6 +532,7 @@ private fun ChatPageContent(
                 conversation = conversation,
                 state = chatListState,
                 loading = loadingJob != null,
+                compressing = sessionActivity == SessionActivity.Compressing,
                 processingStatus = processingStatus,
                 previewMode = previewMode,
                 onPreviewModeChange = { open ->

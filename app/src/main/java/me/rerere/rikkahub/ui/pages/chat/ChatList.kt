@@ -122,6 +122,7 @@ fun ChatList(
     conversation: Conversation,
     state: LazyListState,
     loading: Boolean,
+    compressing: Boolean = false,
     processingStatus: String? = null,
     previewMode: Boolean,
     onPreviewModeChange: (Boolean) -> Unit,
@@ -233,6 +234,7 @@ fun ChatList(
                     conversation = conversation,
                     state = state,
                     loading = loading,
+                    compressing = compressing,
                     processingStatus = processingStatus,
                     settings = settings,
                     hazeState = hazeState,
@@ -308,6 +310,7 @@ private fun ChatListNormal(
     conversation: Conversation,
     state: LazyListState,
     loading: Boolean,
+    compressing: Boolean,
     processingStatus: String? = null,
     settings: Settings,
     hazeState: HazeState,
@@ -453,7 +456,7 @@ private fun ChatListNormal(
                                 ?: node.currentMessage.snapshotModel(),
                             assistant = assistant,
                             userPersona = settings.getUserPersonaOf(conversation),
-                            loading = loading && index == lastMessageIndex,
+                            loading = loading && !compressing && index == lastMessageIndex,
                             onRegenerate = {
                                 onRegenerate(node.currentMessage)
                             },
