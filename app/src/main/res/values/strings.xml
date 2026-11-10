@@ -439,6 +439,7 @@
   <string name="permission_microphone_desc">Microphone permission is required for speech recognition</string>
   <string name="permission_notification">Notification</string>
   <string name="permission_notification_desc">Send notifications</string>
+  <string name="permission_notification_card_desc">Allow notifications to see the progress of background tasks such as AI generation and the web server</string>
   <string name="permission_calendar_read">Read Calendar</string>
   <string name="permission_calendar_read_desc">Read calendar events to answer your schedule-related questions</string>
   <string name="permission_calendar_write">Write Calendar</string>
@@ -1816,3 +1817,4 @@
   <string name="assistant_page_local_tools_phone_use_enable_service">Turn on \"RikkaHub Phone Use\" in the accessibility settings</string>
   <string name="assistant_page_local_tools_phone_use_floating_window_required">Turn on the background floating window first</string>
   <string name="phone_use_accessibility_description">Lets the AI assistant read the screen and perform taps, swipes and text input for you when you enable the Phone Use tool. Nothing is done unless the assistant is running a task you asked for.</string>
+</resources>
