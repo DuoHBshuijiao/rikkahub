@@ -36,8 +36,8 @@ android {
         applicationId = "ruyu.rikkahub"
         minSdk = 26
         targetSdk = 37
-        versionCode = 195
-        versionName = "3.1.2"
+        versionCode = 196
+        versionName = "3.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
