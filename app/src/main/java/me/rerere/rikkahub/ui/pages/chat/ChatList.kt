@@ -81,6 +81,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.UIMessage
@@ -161,34 +162,44 @@ fun ChatList(
     val showPreview by remember(previewProgress) { derivedStateOf { previewProgress.value > 0f } }
     val showChat by remember(previewProgress) { derivedStateOf { previewProgress.value < 1f } }
     val searchAssistant = settings.getAssistantOf(conversation)
+    val previewNodes by rememberUpdatedState(conversation.messageNodes)
     val previewResults by produceState(
         initialValue = ConversationPreviewResults(),
-        conversation.messageNodes,
+        conversation.id,
         searchQuery,
         searchAssistant.regexes,
         showPreview,
     ) {
         if (!showPreview) return@produceState
-        if (searchQuery.isBlank()) {
-            value = ConversationPreviewResults(conversation.messageNodes.mapIndexed { index, node ->
-                ConversationPreviewItem(index, node.currentMessage)
-            })
-        } else {
-            value = value.copy(searching = true)
-            delay(300)
+        value = ConversationPreviewResults(searching = true)
+        if (searchQuery.isNotBlank()) delay(300)
+        // 生成中的节点不断更新，只处理最新快照；摘要和正文搜索都在后台计算。
+        snapshotFlow { previewNodes }.conflate().collect { nodes ->
             value = withContext(Dispatchers.Default) {
                 val context = currentCoroutineContext()
-                ConversationPreviewResults(conversation.messageNodes.flatMapIndexed { index, node ->
-                    context.ensureActive()
-                    buildMessageSearchHits(
-                        conversationId = conversation.id.toString(),
-                        nodeId = node.id.toString(),
-                        message = node.currentMessage,
-                        assistant = searchAssistant,
-                        query = searchQuery,
-                        checkCancelled = { context.ensureActive() },
-                    ).map { ConversationPreviewItem(index, node.currentMessage, it) }
-                })
+                val items = if (searchQuery.isBlank()) {
+                    nodes.mapIndexed { index, node ->
+                        context.ensureActive()
+                        ConversationPreviewItem(
+                            originalIndex = index,
+                            message = node.currentMessage,
+                            previewText = node.currentMessage.toText().trim().take(300).ifBlank { "[…]" },
+                        )
+                    }
+                } else {
+                    nodes.flatMapIndexed { index, node ->
+                        context.ensureActive()
+                        buildMessageSearchHits(
+                            conversationId = conversation.id.toString(),
+                            nodeId = node.id.toString(),
+                            message = node.currentMessage,
+                            assistant = searchAssistant,
+                            query = searchQuery,
+                            checkCancelled = { context.ensureActive() },
+                        ).map { ConversationPreviewItem(index, node.currentMessage, hit = it) }
+                    }
+                }
+                ConversationPreviewResults(items)
             }
         }
     }
@@ -593,7 +604,12 @@ private fun ChatListNormal(
     }
 }
 
-private data class ConversationPreviewItem(val originalIndex: Int, val message: UIMessage, val hit: MessageSearchHit? = null)
+private data class ConversationPreviewItem(
+    val originalIndex: Int,
+    val message: UIMessage,
+    val hit: MessageSearchHit? = null,
+    val previewText: String = "",
+)
 
 private data class ConversationPreviewResults(
     val items: List<ConversationPreviewItem> = emptyList(),
@@ -720,7 +736,7 @@ private fun ChatListPreview(
                             val hit = item.hit
                             if (hit == null) {
                                 Text(
-                                    text = remember(message) { message.toText().trim().take(300).ifBlank { "[…]" } },
+                                    text = item.previewText,
                                     style = MaterialTheme.typography.bodyMedium,
                                     maxLines = 3,
                                     overflow = TextOverflow.Ellipsis,
