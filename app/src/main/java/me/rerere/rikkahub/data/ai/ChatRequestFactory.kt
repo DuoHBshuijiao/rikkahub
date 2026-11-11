@@ -287,7 +287,9 @@ class ChatRequestFactory(
             if (system.isNotBlank()) {
                 add(UIMessage.system(prompt = system).copy(isSynthetic = true))
             }
-            addAll(if (export) messages else messages.limitContext(assistant.contextMessageLimit).withContinuationHint())
+            addAll(
+                if (export) messages else messages.limitContext(assistant.contextMessageLimit).withContinuationHint()
+            )
         }.transforms(
             transformers = inputTransformers,
             context = context,

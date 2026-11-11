@@ -14,6 +14,28 @@ import kotlin.uuid.Uuid
 
 class ConversationCheckpointTest {
     @Test
+    fun `automatic checkpoint retains readable history but limits subsequent model context`() {
+        val nodes = listOf(UIMessage.user("question"), UIMessage.assistant("answer"), UIMessage.user("next"))
+            .map { it.toMessageNode() }
+        val source = Conversation(assistantId = Uuid.random(), messageNodes = nodes)
+
+        val result = source.insertContextCheckpoint(nodes[1].id, "summary")!!
+
+        assertEquals(nodes.take(2), result.messageNodes.take(2))
+        assertSame(nodes.last(), result.messageNodes.last())
+        assertEquals(listOf("summary", "next"), result.currentMessages.limitContext(0).map { it.toText() })
+        assertEquals(nodes, source.messageNodes)
+    }
+
+    @Test
+    fun `automatic checkpoint does not restore a removed anchor`() {
+        val removed = UIMessage.assistant("removed").toMessageNode()
+        val source = Conversation(assistantId = Uuid.random(), messageNodes = emptyList())
+        assertNull(source.insertContextCheckpoint(removed.id, "stale summary"))
+        assertTrue(source.messageNodes.isEmpty())
+    }
+
+    @Test
     fun `compression replaces the history prefix and preserves recent nodes`() {
         val nodes = List(4) { UIMessage.user("message $it").toMessageNode() }
         val source = Conversation(assistantId = Uuid.random(), messageNodes = nodes)

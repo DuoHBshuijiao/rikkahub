@@ -78,6 +78,7 @@ import me.rerere.rikkahub.data.model.getChatModelOf
 import me.rerere.rikkahub.data.model.getStoredAssistantOf
 import me.rerere.rikkahub.data.model.getUserPersona
 import me.rerere.rikkahub.data.model.getUserPersonaOf
+import me.rerere.rikkahub.data.model.insertContextCheckpoint
 import me.rerere.rikkahub.data.model.isAwaitingToolApproval
 import me.rerere.rikkahub.data.model.lastContextTokens
 import me.rerere.rikkahub.data.model.localFileUrls
@@ -1111,8 +1112,12 @@ class ChatService(
             session.processingStatus.value = context.getString(R.string.chat_page_compressing)
             try {
                 val id = insertCompressionCheckpoint(
-                    session, additionalPrompt, keepRecentMessages, clearSuggestions,
-                    createBranch = createBranch, replaceHistory = replaceHistory,
+                    session,
+                    additionalPrompt,
+                    keepRecentMessages,
+                    clearSuggestions,
+                    createBranch = createBranch,
+                    replaceHistory = replaceHistory,
                 )
                 deliver(Result.success(id))
             } catch (e: Exception) {
@@ -1291,7 +1296,9 @@ class ChatService(
         // 原消息原样保留，摘要插在压缩范围的最后一条消息之后。摘要生成期间对话可能已变化，
         // 因此按节点定位插入到最新状态。
         session.update { latest ->
-            check(session.incarnation == incarnation) { context.getString(R.string.chat_page_compress_conversation_changed) }
+            check(
+                session.incarnation == incarnation
+            ) { context.getString(R.string.chat_page_compress_conversation_changed) }
             val updated = latest.insertContextCheckpoint(
                 afterNodeId = nodes[endIndex - 1].id,
                 summary = summary,

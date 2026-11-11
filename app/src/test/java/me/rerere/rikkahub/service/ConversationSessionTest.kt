@@ -31,6 +31,48 @@ import kotlin.uuid.Uuid
 
 class ConversationSessionTest {
     @Test
+    fun `compression blocks queue dispatch until its task releases the slot`() = runTest {
+        val id = Uuid.random()
+        val session = ConversationSession(id, Conversation.ofId(id), backgroundScope, FakeConversationStore(), {})
+        val release = CompletableDeferred<Unit>()
+        session.initialize(load = { Conversation.ofId(id) })
+        assertTrue(session.canStartNextTurn)
+
+        val compression = backgroundScope.launch(start = CoroutineStart.LAZY) { release.await() }
+        session.setJob(compression, activity = SessionActivity.Compressing)
+        session.inbox.enqueue(listOf(UIMessagePart.Text("queued during compression")))
+        assertEquals(SessionActivity.Compressing, session.activity.value)
+        assertFalse(session.canStartNextTurn)
+        assertEquals(1, session.inbox.state.value.messages.size)
+
+        release.complete(Unit)
+        compression.join()
+        assertNull(session.activity.value)
+        assertTrue(session.canStartNextTurn)
+        assertEquals(1, session.inbox.state.value.messages.size)
+        session.cleanup()
+    }
+
+    @Test
+    fun `mid-turn compression keeps the same task and clears activity after cancellation`() = runTest {
+        val id = Uuid.random()
+        val session = ConversationSession(id, Conversation.ofId(id), backgroundScope, FakeConversationStore(), {})
+        val generation = backgroundScope.launch(start = CoroutineStart.LAZY) { awaitCancellation() }
+        session.setJob(generation)
+        session.setActivity(SessionActivity.Compressing)
+        assertSame(generation, session.getJob())
+        assertEquals(SessionActivity.Compressing, session.activity.value)
+        assertFalse(session.canStartNextTurn)
+
+        session.cancelJobs().forEach { it.join() }
+        assertNull(session.getJob())
+        assertNull(session.activity.value)
+        session.setActivity(SessionActivity.Generating)
+        assertNull(session.activity.value)
+        session.cleanup()
+    }
+
+    @Test
     fun `metadata edits survive reopening and final generation save`() = runBlocking {
         val id = Uuid.random()
         val oldAssistant = Uuid.random()

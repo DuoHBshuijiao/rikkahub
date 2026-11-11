@@ -164,6 +164,17 @@ fun Conversation.lastContextTokens(): Int? {
     return message.contextTokens()
 }
 
+/** 自动压缩只插入检查点，保留原消息用于阅读；后续请求从检查点开始。 */
+internal fun Conversation.insertContextCheckpoint(afterNodeId: Uuid, summary: String): Conversation? {
+    val index = messageNodes.indexOfFirst { it.id == afterNodeId }
+    if (index == -1) return null
+    val checkpoint = UIMessage.user(summary).copy(isContextCheckpoint = true).toMessageNode()
+    return copy(
+        messageNodes = messageNodes.take(index + 1) + checkpoint + messageNodes.drop(index + 1),
+        updateAt = Instant.now(),
+    )
+}
+
 /** 用摘要替换 [expectedNodes] 历史前缀；历史已改变时返回 null，后续节点从最新状态保留。 */
 internal fun Conversation.replaceCompressedHistory(expectedNodes: List<MessageNode>, summary: String): Conversation? {
     if (expectedNodes.isEmpty() || messageNodes.take(expectedNodes.size) != expectedNodes) return null
